@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小說動畫工作台 — 把小說做成 AI 動畫</title>
+<meta name="description" content="單檔、零依賴、完全離線的小說轉 AI 動畫工作流工具。四段式 prompt 自動組裝，解決跨鏡頭角色一致性。">
+<style>
+:root{--bg:#0f0f1e;--bg2:#1a1a32;--card:#1e1e38;--card2:#26264a;--gold:#ffd700;--gold-dim:#c9a700;
+--text:#e8e8f0;--dim:#8888a8;--line:rgba(255,215,0,.14);--red:#e8447a;--ok:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',system-ui,-apple-system,sans-serif;
+line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+a{color:var(--gold)}
+.hero{padding:64px 0 40px;text-align:center;border-bottom:1px solid var(--line)}
+.hero .kicker{color:var(--gold-dim);font-size:.82rem;letter-spacing:.14em;font-weight:700;margin-bottom:14px}
+.hero h1{font-size:clamp(1.7rem,5vw,2.5rem);font-weight:900;line-height:1.25;margin-bottom:16px}
+.hero h1 em{font-style:normal;color:var(--gold)}
+.hero p{color:var(--dim);max-width:620px;margin:0 auto 28px;font-size:1.02rem}
+.btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-block;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:700;
+transition:.18s;border:1px solid var(--line);min-height:48px;line-height:1.4}
+.btn.primary{background:var(--gold);color:#0f0f1e;border-color:var(--gold)}
+.btn.primary:hover{background:#ffe44d;transform:translateY(-2px)}
+.btn.ghost{background:var(--card);color:var(--text)}
+.btn.ghost:hover{border-color:var(--gold);background:var(--card2)}
+section{padding:44px 0;border-bottom:1px solid var(--line)}
+h2{font-size:1.28rem;color:var(--gold);margin-bottom:8px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:8px;height:8px;background:var(--gold);border-radius:50%;flex:none}
+.lead{color:var(--dim);margin-bottom:22px;font-size:.94rem}
+pre{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:18px;overflow-x:auto;
+font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;line-height:1.75;color:var(--text)}
+pre b{color:var(--gold);font-weight:700}
+.cards{display:grid;gap:14px;grid-template-columns:1fr}
+@media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h3{font-size:1rem;margin-bottom:8px;color:var(--text)}
+.card p{color:var(--dim);font-size:.88rem;margin:0}
+.card .num{color:var(--gold);font-weight:900;font-size:.78rem;letter-spacing:.1em;margin-bottom:6px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;margin-top:6px}
+th{text-align:left;padding:10px 8px;color:var(--gold);border-bottom:1px solid var(--line);font-weight:700}
+td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--dim)}
+td:first-child{color:var(--text)}
+ul{padding-left:22px;color:var(--dim);font-size:.92rem}
+li{margin-bottom:7px}
+li b{color:var(--text)}
+.tag{display:inline-block;background:rgba(255,215,0,.13);color:var(--gold-dim);border:1px solid rgba(201,167,0,.3);
+padding:3px 10px;border-radius:999px;font-size:.74rem;font-weight:700;margin:0 6px 6px 0}
+footer{padding:36px 0 56px;text-align:center;color:var(--dim);font-size:.84rem}
+footer a{text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="hero"><div class="wrap">
+  <div class="kicker">MOTION COMIC WORKFLOW</div>
+  <h1>把小說做成<br><em>AI 動畫</em></h1>
+  <p>單檔、零依賴、完全離線。四段式 prompt 自動組裝，讓 AI 生成的畫面跨鏡頭保持一致 ——
+     不會 50 個鏡頭出現 50 個不同的主角。</p>
+  <div class="btns">
+    <a class="btn primary" href="report.html">開啟工作台 →</a>
+    <a class="btn ghost" href="https://github.com/share543/novel-animation">GitHub</a>
+  </div>
+  <div style="margin-top:22px">
+    <span class="tag">單一檔案 38KB</span>
+    <span class="tag">零外部資源</span>
+    <span class="tag">file:// 可用</span>
+    <span class="tag">MIT</span>
+  </div>
+</div></div>
+
+<section><div class="wrap">
+  <h2>要解決的問題</h2>
+  <p class="lead">用 AI 把小說做成影片，崩壞的通常不是畫質，是一致性。</p>
+  <p style="color:var(--dim);font-size:.94rem">你寫「林佑安穿米白色風衣、左手戴黃銅戒指」，
+  第一個鏡頭很完美。第二個鏡頭 AI 可能給他紅外套、多一根手指、換一張臉。
+  根因是<b style="color:var(--text)">每次重打 prompt，描述就會漂移</b>。</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>解法：固定段與變動段分離</h2>
+  <p class="lead">把 prompt 切成兩類，固定段只在設定檔寫一次，全案自動沿用。</p>
+<pre><b>完整 prompt</b> ＝ ① 主體描述 ＋ ② 環境描述 ＋ ③ 鏡頭描述 ＋ ④ 畫風基底
+                ↑ 從設定檔複製    ↑ 從設定檔複製     ↑ <b>每格不同</b>    ↑ 從設定檔複製
+                  <b>永不手改</b>         <b>永不手改</b>                     <b>永不手改</b></pre>
+  <p class="lead" style="margin-top:16px">搭配參考圖鎖定（臉部強度 0.85–0.9），角色臉就不會跳。
+  工具會依景別自動算出該填多少強度，你不用查表。</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>六個分頁，六份文件</h2>
+  <p class="lead">工具的每個分頁對應一份製作文件。</p>
+  <table>
+    <tr><th>分頁</th><th>文件</th><th>用途</th></tr>
+    <tr><td>① 人物</td><td>Character Sheet</td><td>角色參考圖、參考強度、固定描述字串</td></tr>
+    <tr><td>② 場景</td><td>Scene Sheet</td><td>場景參考圖、空間結構鎖定</td></tr>
+    <tr><td>③ 鏡頭表</td><td>Shot List</td><td><b style="color:var(--gold)">核心</b> — 景別、運鏡、時長、prompt</td></tr>
+    <tr><td>④ 畫風</td><td>Prompt Library</td><td>畫風基底、景別模板、負面提示詞</td></tr>
+    <tr><td>⑤ 輸出</td><td>Asset Registry</td><td>四種匯出格式、QC 清單</td></tr>
+  </table>
+</div></section>
+
+<section><div class="wrap">
+  <h2>主要功能</h2>
+  <div class="cards">
+    <div class="card"><div class="num">PROMPT</div><h3>四段式自動組裝</h3>
+      <p>填鏡頭表，prompt 自動拼好，每列即時預覽。</p></div>
+    <div class="card"><div class="num">CONSISTENCY</div><h3>參考強度自動推算</h3>
+      <p>遠景 0.30 / 中景 0.85 / 特寫 0.90，依景別自動帶入。</p></div>
+    <div class="card"><div class="num">TIMING</div><h3>字數換算單元數</h3>
+      <p>260 字/分鐘，自動估算總長度、該切幾個單元、每格幾秒。</p></div>
+    <div class="card"><div class="num">EXPORT</div><h3>四種匯出</h3>
+      <p>TXT 貼進生成工具、CSV 管進度、MD 存檔、JSON 備份。</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>離線保證</h2>
+  <p class="lead">使用者要求，也是硬性約束。</p>
+  <ul>
+    <li><b>單一檔案</b> — HTML + CSS + JS 全內嵌在 <code>report.html</code>，38KB。</li>
+    <li><b>完全離線</b> — 無 CDN、無框架、無 <code>fetch</code>，全部原生 Web API。</li>
+    <li><b>雙擊即用</b> — 直接開 <code>file://</code> 就能跑，不需安裝或架伺服器。</li>
+    <li><b>相容性處理</b> — Safari 在 <code>file://</code> 封鎖 localStorage 時自動退回記憶體並提示備份；
+        剪貼簿不可用時退回舊版 API。</li>
+  </ul>
+  <p class="lead" style="margin-top:14px">下載後離線使用，或直接用線上版：
+    <a href="report.html">report.html</a></p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>先看範例</h2>
+  <p class="lead">開啟工具後點右上角「載入範例」，立刻看到完整運作 ——
+  2 個角色、2 個場景、8 個鏡頭（推理短篇〈雨夜來客〉單元一開場）。</p>
+  <p class="lead"><b style="color:var(--text)">建議不要照抄範例，</b>而是載入理解結構後按「新專案」清空，
+  用你自己小說的第一個場景填 5 個鏡頭，生成出來確認一致性可控再往下鋪量。</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>文件</h2>
+  <div class="cards">
+    <div class="card"><h3><a href="docs/README.md">文件索引</a></h3><p>六份文件與資料流。</p></div>
+    <div class="card"><h3><a href="docs/workflow.md">完整工作流程</a></h3><p>從小說到成片的九個步驟。</p></div>
+    <div class="card"><h3><a href="docs/jimeng-notes.md">即夢實務要點</a></h3><p>工具限制、免費額度策略、補救順序。</p></div>
+    <div class="card"><h3><a href="docs/04-shot-list.md">鏡頭表規格</a></h3><p>核心文件的完整說明。</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <p>MIT License · <a href="https://github.com/share543/novel-animation">share543/novel-animation</a></p>
+  <p style="margin-top:8px;font-size:.8rem">目標生成工具以即夢（Seedream 系列）為例，參數可依實際介面調整。</p>
+</div></footer>
+
+</body>
+</html>
