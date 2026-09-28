@@ -1,0 +1,8 @@
+# 素材工作目錄（個人專案資料，不進版控）
+refs/
+output/
+
+# 系統
+.DS_Store
+Thumbs.db
+*.log

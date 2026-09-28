@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小說動畫工作台 — 即夢 Motion Comic</title>
+<style>
+:root{
+  --bg:#0f0f1e; --bg2:#1a1a32; --card:#1e1e38; --card2:#26264a;
+  --gold:#ffd700; --gold-dim:#c9a700; --red:#e8447a;
+  --text:#e8e8f0; --dim:#8888a8; --line:rgba(255,215,0,.14);
+  --life:#ff8a3d; --ai:#7c5cff; --ok:#4ade80; --warn:#fbbf24;
+  --fs:16px; --r:12px; --g:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',system-ui,sans-serif;font-size:var(--fs);line-height:1.6;padding-bottom:60px}
+h1,h2,h3{font-weight:900;line-height:1.3}
+button,input,select,textarea{font-family:inherit;font-size:.92rem}
+a{color:var(--gold)}
+
+/* ── header ── */
+header{position:sticky;top:0;z-index:50;background:rgba(15,15,30,.96);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{font-size:1.15rem;color:var(--gold)}
+header .sub{color:var(--dim);font-size:.8rem}
+.spacer{flex:1}
+.btn{background:var(--card);border:1px solid var(--line);color:var(--text);padding:8px 14px;border-radius:8px;
+  cursor:pointer;transition:.15s;min-height:40px}
+.btn:hover{background:var(--card2);border-color:var(--gold)}
+.btn.p{background:var(--gold);color:#0f0f1e;border-color:var(--gold);font-weight:700}
+.btn.d{background:transparent;color:var(--red);border-color:rgba(232,68,122,.4)}
+.btn.s{padding:5px 10px;min-height:32px;font-size:.8rem}
+
+/* ── tabs ── */
+nav.tabs{display:flex;gap:6px;padding:12px 20px 0;overflow-x:auto;flex-wrap:wrap}
+nav.tabs button{background:var(--bg2);border:1px solid var(--line);border-bottom:none;color:var(--dim);
+  padding:10px 16px;border-radius:10px 10px 0 0;cursor:pointer;min-height:44px;white-space:nowrap}
+nav.tabs button.on{background:var(--bg);color:var(--gold);font-weight:700}
+main{padding:0 20px 40px}
+.panel{display:none} .panel.on{display:block}
+h2.sec{font-size:1.05rem;color:var(--gold);margin:24px 0 12px;display:flex;align-items:center;gap:8px}
+h2.sec::before{content:"";width:7px;height:7px;background:var(--gold);border-radius:50%}
+.note{background:rgba(255,215,0,.07);border-left:3px solid var(--gold);padding:10px 14px;border-radius:6px;
+  color:var(--dim);font-size:.85rem;margin:12px 0}
+.note b{color:var(--gold)}
+
+/* ── forms ── */
+.grid{display:grid;gap:var(--g);grid-template-columns:1fr}
+@media(min-width:768px){.grid.c2{grid-template-columns:1fr 1fr}.grid.c3{grid-template-columns:1fr 1fr 1fr}}
+.f{display:flex;flex-direction:column;gap:5px}
+.f label{font-size:.8rem;color:var(--dim);font-weight:700}
+.f input,.f select,.f textarea{background:var(--bg2);border:1px solid var(--line);color:var(--text);
+  padding:9px 12px;border-radius:8px;width:100%}
+.f textarea{resize:vertical;min-height:64px;line-height:1.5}
+.f input:focus,.f select:focus,.f textarea:focus{outline:2px solid var(--gold);outline-offset:1px;background:var(--card2)}
+.f small{color:var(--dim);font-size:.75rem}
+.f.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ── cards ── */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.card h3{font-size:1rem;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h3 .tag{font-size:.7rem;background:rgba(255,215,0,.15);color:var(--gold-dim);
+  border:1px solid rgba(201,167,0,.35);padding:2px 8px;border-radius:999px;font-weight:700}
+.card .acts{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.empty{color:var(--dim);text-align:center;padding:40px 20px;border:1px dashed var(--line);border-radius:var(--r)}
+
+/* ── table ── */
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px}
+table{border-collapse:collapse;width:100%;min-width:900px;font-size:.85rem}
+th{background:var(--bg2);color:var(--gold);text-align:left;padding:10px;font-weight:700;
+  position:sticky;top:0;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top}
+tr:hover td{background:rgba(255,255,255,.02)}
+td input,td select,td textarea{background:transparent;border:1px solid transparent;color:var(--text);
+  padding:5px 7px;border-radius:5px;width:100%;min-width:70px}
+td input:hover,td select:hover,td textarea:hover{border-color:var(--line)}
+td input:focus,td select:focus,td textarea:focus{outline:2px solid var(--gold);background:var(--bg2)}
+td .sid{font-family:ui-monospace,monospace;color:var(--gold);font-weight:700;white-space:nowrap}
+td textarea{min-height:48px;resize:vertical;line-height:1.45}
+.st-ok{color:var(--ok)}.st-wait{color:var(--warn)}.st-no{color:var(--dim)}
+code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;display:block;white-space:pre-wrap}
+
+/* ── modal ── */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:none;
+  align-items:center;justify-content:center;padding:20px}
+.mask.on{display:flex}
+.modal{background:var(--card);border:1px solid var(--gold-dim);border-radius:var(--r);
+  max-width:860px;width:100%;max-height:88vh;overflow:auto;padding:22px}
+.modal h2{color:var(--gold);font-size:1.1rem;margin-bottom:14px;display:flex;align-items:center}
+.modal h2 .x{margin-left:auto;cursor:pointer;color:var(--dim);font-size:1.3rem;line-height:1;padding:4px 8px}
+.modal h2 .x:hover{color:var(--red)}
+.msec{font-size:.8rem;color:var(--gold-dim);font-weight:700;margin:16px 0 8px;
+  border-bottom:1px solid var(--line);padding-bottom:5px}
+
+.stat{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+.stat b{display:block;font-size:1.5rem;color:var(--gold);font-weight:900}
+.stat span{font-size:.75rem;color:var(--dim)}
+.srow{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:12px 0}
+@media(max-width:600px){header{padding:10px 14px}main{padding:0 14px 30px}nav.tabs{padding:10px 14px 0}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>小說動畫工作台</h1>
+    <div class="sub">即夢 × Motion Comic ｜ prompt 自動組裝</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn s" onclick="save()">儲存</button>
+  <button class="btn s" onclick="load()">載入</button>
+  <button class="btn s" onclick="exportJSON()">備份</button>
+  <button class="btn s" onclick="document.getElementById('fi').click()">匯入</button>
+  <input type="file" id="fi" accept=".json" style="display:none" onchange="importJSON(event)">
+  <button class="btn s" onclick="loadDemo()">載入範例</button>
+  <button class="btn s" onclick="newProject()">新專案</button>
+</header>
+
+<nav class="tabs">
+  <button class="on" data-p="dash">總覽</button>
+  <button data-p="char">① 人物</button>
+  <button data-p="scene">② 場景</button>
+  <button data-p="shot">③ 鏡頭表</button>
+  <button data-p="style">④ 畫風/提示詞</button>
+  <button data-p="out">⑤ 輸出</button>
+</nav>
+
+<main>
+
+<!-- ═══ 總覽 ═══ -->
+<div class="panel on" id="p-dash">
+  <div class="note">
+    <b>流程：</b>建人物參考設定 → 建場景設定 → 填鏡頭表（prompt 自動組裝）→ 批次生成 → QC → 剪輯。<br>
+    <b>核心：</b>①與②的描述字串<b>永不手改</b>，只在鏡頭表改第③段。改了就會失去一致性。
+  </div>
+  <div class="srow">
+    <div class="stat"><b id="s-char">0</b><span>角色</span></div>
+    <div class="stat"><b id="s-scene">0</b><span>場景</span></div>
+    <div class="stat"><b id="s-shot">0</b><span>鏡頭</span></div>
+    <div class="stat"><b id="s-dur">0:00</b><span>總長度</span></div>
+    <div class="stat"><b id="s-words">0</b><span>旁白字數</span></div>
+    <div class="stat"><b id="s-need">0</b><span>待生成</span></div>
+  </div>
+
+  <h2 class="sec">專案資訊</h2>
+  <div class="grid c2">
+    <div class="f"><label>專案名稱</label><input id="m-title" oninput="S.meta.title=this.value"></div>
+    <div class="f"><label>單元名稱</label><input id="m-unit" oninput="S.meta.unit=this.value" placeholder="例：單元一：雨夜來客"></div>
+  </div>
+  <div class="grid c3" style="margin-top:12px">
+    <div class="f"><label>模型</label>
+      <select id="m-model" onchange="S.meta.model=this.value">
+        <option>Seedream 5.0 Pro</option><option>Seedream 4.5</option><option>即夢圖片 3.0</option>
+      </select></div>
+    <div class="f"><label>比例</label>
+      <select id="m-ratio" onchange="S.meta.ratio=this.value">
+        <option>16:9</option><option>1:1</option><option>4:3</option><option>9:16</option>
+      </select></div>
+    <div class="f"><label>旁白語速（字/分鐘）</label>
+      <input type="number" id="m-wpm" value="260" oninput="S.meta.wpm=+this.value;renderAll()"></div>
+  </div>
+
+  <h2 class="sec">單元統計</h2>
+  <div class="srow">
+    <div class="stat"><b id="s-1">0:00</b><span>旁白估算</span></div>
+    <div class="stat"><b id="s-2">0</b><span>預估單元數</span></div>
+    <div class="stat"><b id="s-3">0</b><span>平均鏡頭長</span></div>
+  </div>
+  <div class="note" id="conv"></div>
+</div>
+
+<!-- ═══ 人物 ═══ -->
+<div class="panel" id="p-char">
+  <h2 class="sec">角色設定檔</h2>
+  <div class="note">
+    <b>參考圖流程：</b>先用「描述字串＋畫風」文生圖 → 挑最滿意的 → <b>放大下載</b> → 存到
+    <code>refs/</code> → 之後每個鏡頭都上傳它。<br>
+    <b>臉部參考強度</b> 0.85–0.9 鎖臉，<b>主體參考強度</b> 0.4–0.6 讓姿勢構圖自由變化。
+  </div>
+  <div id="charList"></div>
+  <button class="btn p" onclick="addChar()">＋ 新增角色</button>
+</div>
+
+<!-- ═══ 場景 ═══ -->
+<div class="panel" id="p-scene">
+  <h2 class="sec">場景設定檔</h2>
+  <div class="note">
+    偵探小說的場景通常只有 <b>3–6 個</b>，一開始建好之後一路沿用。
+    建議為每個場景做一張<b>參考圖</b>，主體參考強度調高（0.65–0.7）鎖住空間結構 ——
+    窗戶位置、書架方位靠文字描述每次都會跑掉。
+  </div>
+  <div id="sceneList"></div>
+  <button class="btn p" onclick="addScene()">＋ 新增場景</button>
+</div>
+
+<!-- ═══ 鏡頭表 ═══ -->
+<div class="panel" id="p-shot">
+  <h2 class="sec">鏡頭表（核心）</h2>
+  <div class="note">
+    prompt = <b>①角色描述 + ②場景描述 + ③鏡頭描述 + ④畫風基底</b>，自動組裝，點欄位即時預覽。<br>
+    <b>⚠️ 即夢限制：</b>多人物鎖臉僅限 2 人且易生出第三個人 → 一律單人鏡頭，對話用剪輯正反打。
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn p" onclick="addShot()">＋ 新增鏡頭</button>
+    <button class="btn" onclick="renumber()">重新編號</button>
+    <button class="btn" onclick="autoDuration()">依旁白字數估算時長</button>
+    <button class="btn" onclick="promptView()">檢視全部 prompt</button>
+  </div>
+  <div class="tblwrap"><table id="shotTbl"></table></div>
+</div>
+
+<!-- ═══ 畫風 ═══ -->
+<div class="panel" id="p-style">
+  <h2 class="sec">畫風基底與提示詞庫</h2>
+  <div class="note">這段<b>每個專案固定一次</b>，全片沿用。改了就會風格不統一。</div>
+
+  <div class="f"><label>畫風基底（第④段）— 中文版（即夢對中文理解較準）</label>
+    <textarea id="s-style" rows="4" oninput="S.style=this.value;renderAll()"></textarea>
+    <small>建議：電影級寫實畫風，35mm 膠片顆粒感，淺景深，電影感打光，低飽和色調搭配暖色高光</small>
+  </div>
+
+  <div class="f" style="margin-top:14px"><label>畫風基底 — 英文版（備用）</label>
+    <textarea id="s-styleEn" rows="3" oninput="S.styleEn=this.value"></textarea></div>
+
+  <div class="f" style="margin-top:14px"><label>反向提示詞（Negative Prompt）</label>
+    <textarea id="s-neg" rows="4" oninput="S.neg=this.value"></textarea>
+    <small>即夢「反向提示詞」欄位，直接貼上</small></div>
+
+  <h2 class="sec">景別模板</h2>
+  <div class="tblwrap"><table id="sizeTbl"></table></div>
+  <div class="note">即夢參考強度建議值已內建：特寫類臉部強度拉高到 0.9，遠景類降到 0.3。</div>
+</div>
+
+<!-- ═══ 輸出 ═══ -->
+<div class="panel" id="p-out">
+  <h2 class="sec">輸出</h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    <button class="btn p" onclick="exportCSV()">下載鏡頭表 CSV</button>
+    <button class="btn p" onclick="exportPrompt()">下載全部 prompt（TXT）</button>
+    <button class="btn" onclick="exportMD()">下載完整專案 Markdown</button>
+    <button class="btn" onclick="copyAll()">複製全部 prompt</button>
+  </div>
+  <h2 class="sec">QC 清單</h2>
+  <div class="note">
+    每張生成後逐項檢查：臉是否與參考圖一致？服裝一致？標誌性特徵有出現？<br>
+    畫風一致？手部正常？有無多餘人物？構圖符合景別？
+  </div>
+  <div class="note" style="border-color:var(--ok);background:rgba(74,222,128,.07)">
+    <b style="color:var(--ok)">省積分補救順序：</b>
+    局部重繪 → 消除筆 → 重繪 → 變體 → 整張重抽。
+    <b>不要一不合格就重抽。</b>
+  </div>
+  <h2 class="sec">免費積分生存指南</h2>
+  <div class="card">
+    <ol style="padding-left:20px;line-height:2">
+      <li>每日簽到積分<b>當日清零</b> — 每天用掉，別囤</li>
+      <li>測試用低解析度，滿意再出高清</li>
+      <li>一次生 4 張，挑選比重抽划算</li>
+      <li>QC 不合格先試局部重繪</li>
+      <li>參考圖存好重用，不花積分</li>
+    </ol>
+  </div>
+</div>
+
+</main>
+
+<!-- prompt 檢視 modal -->
+<div class="mask" id="m1">
+  <div class="modal">
+    <h2>全部 prompt<span class="x" onclick="closeM('m1')">✕</span></h2>
+    <div class="msec">複製貼到即夢。參考設定請一併照做。</div>
+    <div id="m1body" style="font-size:.82rem"></div>
+  </div>
+</div>
+
+<!-- 編輯 modal -->
+<div class="mask" id="m2">
+  <div class="modal" id="m2body"></div>
+</div>
+
+<script>
+/* ═══════════ 資料模型 ═══════════ */
+const SIZES = {
+  '大遠景':{t:'極遠景，廣角，呈現廣闊環境，主體在畫面中很小',f:.30,s:.70},
+  '遠景'  :{t:'遠景全身鏡頭，環境與人物同時入鏡',f:.30,s:.70},
+  '中景'  :{t:'中景取景腰部以上，構圖自然',f:.85,s:.50},
+  '近景'  :{t:'中近景取景胸部以上，捕捉微妙表情',f:.90,s:.40},
+  '特寫'  :{t:'特寫鏡頭，突出人物面部，淺景深背景模糊',f:.90,s:.35},
+  '大特寫':{t:'微距大特寫，畫面填滿，呈現細節紋理',f:.90,s:.35},
+  '物件'  :{t:'物件特寫，微距細節，淺景深',f:.00,s:.70},
+};
+const MOVES = ['固定','緩慢推近','緩慢拉遠','緩慢左移','緩慢右移','輕微晃動'];
+
+const DEF_STYLE = '電影級寫實畫風，35mm 膠片顆粒感，淺景深，電影感打光，低飽和色調搭配暖色高光，專業色彩分級，高細節';
+const DEF_NEG   = '低畫質，模糊，失焦，變形，多餘手指，缺少手指，畸形手部，多餘肢體，錯誤五官，臉部不對稱，文字，浮水印，簽名，logo，截斷，低對比，過度飽和，塑膠皮膚，額外物體';
+
+let S = blank();
+function blank(){ return {
+  meta:{title:'我的小說動畫計畫', unit:'', model:'Seedream 5.0 Pro', ratio:'16:9', wpm:260},
+  style:DEF_STYLE, styleEn:'', neg:DEF_NEG,
+  chars:[], scenes:[], shots:[]
+};}
+
+/* ═══════════ 工具 ═══════════ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = p => p + Math.random().toString(36).slice(2,7);
+const mmss = s => Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+const num = (v,d=0) => { const n=parseFloat(v); return isNaN(n)?d:n; };
+
+function charById(id){ return S.chars.find(c=>c.id===id); }
+function sceneById(id){ return S.scenes.find(c=>c.id===id); }
+
+/* ═══════════ prompt 組裝 ═══════════ */
+function buildPrompt(sh){
+  const c = charById(sh.charId), s = sceneById(sh.sceneId);
+  const seg = [];
+  if(c && c.desc) seg.push(c.desc.trim());
+  if(s && s.desc) seg.push(s.desc.trim());
+  if(sh.lens) seg.push(sh.lens.trim());
+  seg.push((S.style||'').trim());
+  return seg.filter(Boolean).join('\n\n');
+}
+function refHint(sh){
+  const s = SIZES[sh.size] || {f:.85,s:.5};
+  const c = charById(sh.charId);
+  if(sh.size==='物件' || !c) return '主體參考 ' + s.s.toFixed(2);
+  return '角色特徵 臉部' + s.f.toFixed(2) + ' / 主體' + s.s.toFixed(2);
+}
+
+/* ═══════════ 統計 ═══════════ */
+function totalDur(){ return S.shots.reduce((a,s)=>a+num(s.dur,3),0); }
+function allWords(){ return S.shots.reduce((a,s)=>a+(s.narr||'').replace(/\s/g,'').length,0); }
+function timecode(i){
+  let t=0; for(let k=0;k<i;k++) t+=num(S.shots[k].dur,3);
+  return mmss(t);
+}
+
+/* ═══════════ 渲染 ═══════════ */
+function renderAll(){
+  $('#s-char').textContent=S.chars.length;
+  $('#s-scene').textContent=S.scenes.length;
+  $('#s-shot').textContent=S.shots.length;
+  $('#s-dur').textContent=mmss(totalDur());
+  const w=allWords();
+  $('#s-words').textContent=w;
+  $('#s-need').textContent=S.shots.filter(s=>s.st!=='✅').length;
+  const mins=w/(S.meta.wpm||260);
+  $('#s-1').textContent=mmss(mins*60);
+  $('#s-2').textContent=Math.max(1,Math.ceil(mins/12.5));
+  $('#s-3').textContent=S.shots.length?Math.round(totalDur()/S.shots.length):0;
+  $('#conv').innerHTML = w
+    ? `目前旁白 <b>${w}</b> 字，約 <b>${mins.toFixed(1)}</b> 分鐘 → 建議切成 <b>${Math.max(1,Math.ceil(mins/12.5))}</b> 個單元（每單元 10–15 分）。<br>
+       鏡頭 <b>${S.shots.length}</b> 個，10 分鐘單元建議 35–50 個。`
+    : '尚無旁白內容。';
+  renderShots();
+}
+
+function renderChars(){
+  $('#charList').innerHTML = S.chars.length ? S.chars.map(c=>`
+    <div class="card">
+      <h3>${esc(c.name||'未命名角色')}
+        ${c.role?`<span class="tag">${esc(c.role)}</span>`:''}
+        <span class="acts">
+          <button class="btn s" onclick="editChar('${c.id}')">編輯</button>
+          <button class="btn s d" onclick="delChar('${c.id}')">刪除</button>
+        </span></h3>
+      ${c.desc?`<code class="pp" style="color:var(--gold-dim)">${esc(c.desc)}</code>`:'<div class="empty" style="padding:16px">尚未填寫描述字串</div>'}
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:.8rem;color:var(--dim)">
+        <span>參考圖：<code>${esc(c.ref||'未設定')}</code></span>
+        <span>臉部 <b>${num(c.face,.85).toFixed(2)}</b></span>
+        <span>主體 <b>${num(c.body,.5).toFixed(2)}</b></span>
+        <span>用於 ${S.shots.filter(s=>s.charId===c.id).length} 個鏡頭</span>
+      </div>
+    </div>`).join('') : '<div class="empty">尚無角色。點下方按鈕新增。</div>';
+}
+
+function renderScenes(){
+  $('#sceneList').innerHTML = S.scenes.length ? S.scenes.map(s=>`
+    <div class="card">
+      <h3>${esc(s.name||'未命名場景')}
+        ${s.type?`<span class="tag">${esc(s.type)}</span>`:''}
+        <span class="acts">
+          <button class="btn s" onclick="editScene('${s.id}')">編輯</button>
+          <button class="btn s d" onclick="delScene('${s.id}')">刪除</button>
+        </span></h3>
+      ${s.desc?`<code class="pp" style="color:var(--gold-dim)">${esc(s.desc)}</code>`:'<div class="empty" style="padding:16px">尚未填寫描述字串</div>'}
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:.8rem;color:var(--dim)">
+        <span>參考圖：<code>${esc(s.ref||'未設定')}</code></span>
+        <span>主體 <b>${num(s.body,.65).toFixed(2)}</b></span>
+        <span>用於 ${S.shots.filter(x=>x.sceneId===s.id).length} 個鏡頭</span>
+      </div>
+    </div>`).join('') : '<div class="empty">尚無場景。點下方按鈕新增。</div>';
+}
+
+function renderShots(){
+  const chOpt = id => `<option value="">（無）</option>` +
+    S.chars.map(c=>`<option value="${c.id}"${id===c.id?' selected':''}>${esc(c.name)}</option>`).join('');
+  const scOpt = id => `<option value="">（無）</option>` +
+    S.scenes.map(c=>`<option value="${c.id}"${id===c.id?' selected':''}>${esc(c.name)}</option>`).join('');
+
+  $('#shotTbl').innerHTML = `
+    <thead><tr>
+      <th style="width:64px">ID</th><th style="width:58px">時間</th><th style="min-width:220px">旁白</th>
+      <th style="width:92px">景別</th><th style="width:92px">運鏡</th><th style="width:64px">秒</th>
+      <th style="width:110px">角色</th><th style="width:110px">場景</th>
+      <th style="min-width:220px">③ 鏡頭描述</th><th style="width:66px">狀態</th><th style="width:40px"></th>
+    </tr></thead><tbody>${S.shots.map((s,i)=>`
+      <tr>
+        <td class="sid">${s.id}</td>
+        <td style="color:var(--dim);font-family:ui-monospace,monospace">${timecode(i)}</td>
+        <td><textarea oninput="upd('${i}','narr',this.value)">${esc(s.narr)}</textarea></td>
+        <td><select onchange="upd('${i}','size',this.value)">${Object.keys(SIZES).map(k=>
+            `<option${s.size===k?' selected':''}>${k}</option>`).join('')}</select></td>
+        <td><select onchange="upd('${i}','move',this.value)">${MOVES.map(m=>
+            `<option${s.move===m?' selected':''}>${m}</option>`).join('')}</select></td>
+        <td><input type="number" step="0.5" value="${num(s.dur,3)}" oninput="upd('${i}','dur',this.value)"></td>
+        <td><select onchange="upd('${i}','charId',this.value)">${chOpt(s.charId)}</select></td>
+        <td><select onchange="upd('${i}','sceneId',this.value)">${scOpt(s.sceneId)}</select></td>
+        <td><textarea oninput="upd('${i}','lens',this.value)">${esc(s.lens)}</textarea>
+            <code class="pp" style="color:var(--dim);margin-top:4px">${esc(buildPrompt(s)).slice(0,120)}${buildPrompt(s).length>120?'…':''}</code></td>
+        <td><select onchange="upd('${i}','st',this.value)">
+          ${['✅','🔄','❌'].map(x=>`<option${s.st===x?' selected':''}>${x}</option>`).join('')}</select></td>
+        <td><button class="btn s d" onclick="delShot(${i})">✕</button></td>
+      </tr>`).join('')}</tbody>`;
+}
+
+function renderSizes(){
+  $('#sizeTbl').innerHTML = `<thead><tr><th>景別</th><th>即夢模板（③段）</th><th>臉部</th><th>主體</th><th>用途</th></tr></thead><tbody>` +
+    Object.entries(SIZES).map(([k,v])=>`<tr><td><b>${k}</b></td><td>${esc(v.t)}</td>
+      <td>${v.f.toFixed(2)}</td><td>${v.s.toFixed(2)}</td>
+      <td style="color:var(--dim);font-size:.82rem">${esc({'大遠景':'交代環境、案件現場','遠景':'人物全身＋場景關係',
+        '中景':'對話、敘事（最常用）','近景':'情緒、表情','特寫':'臉部強調、線索',
+        '大特寫':'眼睛、戒指、筆跡、血跡（推理片最有力）','物件':'兇器、信件等物證'}[k]||'')}</td></tr>`).join('') +
+    `</tbody>`;
+}
+
+function upd(i,k,v){ S.shots[i][k]=v; if(k==='size'||k==='dur'||k==='charId'||k==='sceneId'||k==='lens') renderShots(); renderAll(); }
+
+/* ═══════════ CRUD ═══════════ */
+function addChar(){ S.chars.push({id:uid('c'),name:'',role:'',desc:'',ref:'',face:.85,body:.5}); renderChars(); }
+function delChar(id){
+  if(!confirm('刪除此角色？相關鏡頭會變成「無角色」。'))return;
+  S.chars=S.chars.filter(c=>c.id!==id);
+  S.shots.forEach(s=>{ if(s.charId===id)s.charId=''; }); renderChars(); renderShots(); renderAll();
+}
+function addScene(){ S.scenes.push({id:uid('s'),name:'',type:'室內',desc:'',ref:'',body:.65}); renderScenes(); }
+function delScene(id){
+  if(!confirm('刪除此場景？相關鏡頭會變成「無場景」。'))return;
+  S.scenes=S.scenes.filter(c=>c.id!==id);
+  S.shots.forEach(s=>{ if(s.sceneId===id)s.sceneId=''; }); renderScenes(); renderShots(); renderAll();
+}
+function addShot(){
+  S.shots.push({id:'S'+String(S.shots.length+1).padStart(3,'0'),narr:'',size:'中景',move:'固定',
+    dur:4,charId:S.chars[0]?.id||'',sceneId:S.scenes[0]?.id||'',lens:'',st:'🔄'});
+  renderShots(); renderAll();
+}
+function delShot(i){ if(!confirm('刪除此鏡頭？'))return; S.shots.splice(i,1); renderShots(); renderAll(); }
+function renumber(){ S.shots.forEach((s,i)=>s.id='S'+String(i+1).padStart(3,'0')); renderShots(); }
+function autoDuration(){
+  S.shots.forEach(s=>{
+    const w=(s.narr||'').replace(/\s/g,'').length;
+    if(w) s.dur = Math.max(1, Math.round(w/(S.meta.wpm||260)*60/0.5)*0.5);
+  });
+  renderShots(); renderAll(); alert('已依旁白字數估算時長（'+(S.meta.wpm||260)+' 字/分鐘）。可再手動微調。');
+}
+
+function editChar(id){
+  const c=charById(id); if(!c)return;
+  const F=(k,l,val,ph,type)=>`<div class="f"><label>${l}</label><input type="${type||'text'}" id="f_${k}" value="${esc(val||'')}" placeholder="${ph||''}"></div>`;
+  $('#m2body').innerHTML = `<h2>編輯角色<span class="x" onclick="closeM('m2')">✕</span></h2>
+    <div class="msec">基本</div>
+    <div class="grid c2">${F('name','角色名稱',c.name)}${F('role','角色定位',c.role,'主角／嫌疑人／配角')}</div>
+    <div class="msec">參考設定（即夢）</div>
+    <div class="grid c3">${F('ref','參考圖路徑',c.ref,'refs/lin-youan.png')}
+      ${F('face','臉部參考強度',c.face,'0.85','number')}${F('body','主體參考強度',c.body,'0.5','number')}</div>
+    <div class="msec">描述字串（第①段，永不手改）</div>
+    <div class="f"><textarea id="f_desc" rows="5">${esc(c.desc)}</textarea>
+      <small>50–80 字，必須包含：性別年齡 + 髮型 + 臉部特徵 + 固定服裝 + 一個辨識記憶點</small></div>
+    <div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn p" onclick="saveChar('${id}')">儲存</button></div>`;
+  openM('m2');
+}
+function saveChar(id){
+  const c=charById(id); if(!c)return;
+  ['name','role','ref','desc'].forEach(k=>c[k]=$('#f_'+k).value);
+  c.face=num($('#f_face').value,.85); c.body=num($('#f_body').value,.5);
+  closeM('m2'); renderChars(); renderShots(); renderAll();
+}
+function editScene(id){
+  const s=sceneById(id); if(!s)return;
+  const F=(k,l,val,ph,type)=>`<div class="f"><label>${l}</label><input type="${type||'text'}" id="f_${k}" value="${esc(val||'')}" placeholder="${ph||''}"></div>`;
+  $('#m2body').innerHTML = `<h2>編輯場景<span class="x" onclick="closeM('m2')">✕</span></h2>
+    <div class="msec">基本</div>
+    <div class="grid c3">${F('name','場景名稱',s.name)}${F('type','類型',s.type)}
+      ${F('ref','參考圖路徑',s.ref,'refs/office.png')}${F('body','主體參考強度',s.body,'0.65','number')}</div>
+    <div class="msec">描述字串（第②段，永不手改）</div>
+    <div class="f"><textarea id="f_desc" rows="5">${esc(s.desc)}</textarea>
+      <small>40–60 字：空間類型 + 幾項固定陳設 + 光線 + 氛圍</small></div>
+    <div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn p" onclick="saveScene('${id}')">儲存</button></div>`;
+  openM('m2');
+}
+function saveScene(id){
+  const s=sceneById(id); if(!s)return;
+  ['name','type','ref','desc'].forEach(k=>s[k]=$('#f_'+k).value);
+  s.body=num($('#f_body').value,.65);
+  closeM('m2'); renderScenes(); renderShots(); renderAll();
+}
+
+/* ═══════════ modal ═══════════ */
+function openM(id){ $('#'+id).classList.add('on'); }
+function closeM(id){ $('#'+id).classList.remove('on'); }
+function promptView(){
+  $('#m1body').innerHTML = S.shots.map((s,i)=>{
+    const c=charById(s.charId);
+    return `<div class="card"><h3>${s.id} <span class="tag">${s.size}／${s.move}／${s.dur}s</span>
+      <span style="color:var(--dim);font-weight:400;font-size:.8rem">${esc(refHint(s))}</span></h3>
+      ${s.narr?`<p style="color:var(--dim);font-size:.85rem;margin-bottom:8px">${esc(s.narr)}</p>`:''}
+      <code class="pp" style="color:var(--text)">${esc(buildPrompt(s))}</code></div>`;
+  }).join('') || '<div class="empty">尚無鏡頭</div>';
+  openM('m1');
+}
+
+/* ═══════════ 儲存 ═══════════ */
+const KEY='novel-anim-jimeng';
+/* Safari 在 file:// 下封鎖 localStorage → 退回記憶體 + 提醒用備份 */
+let MEM=null, storageOK=true;
+try{ localStorage.setItem('__p','1'); localStorage.removeItem('__p'); }catch(e){ storageOK=false; }
+const put = k => { try{ localStorage.setItem(k, JSON.stringify(S)); }catch(e){ MEM=JSON.stringify(S); } };
+const get = k => { try{ return localStorage.getItem(k) || MEM; }catch(e){ return MEM; } };
+
+function save(){
+  if(!storageOK) return alert('此瀏覽器不允許本機儲存（Safari 開啟本機檔案時會封鎖）。\n請改用右上角「備份」下載 JSON 檔，之後用「匯入」讀回。');
+  put(KEY); alert('已儲存到瀏覽器。');
+}
+function load(){
+  const d=get(KEY);
+  if(!d) return alert('沒有已儲存的資料。');
+  if(!confirm('載入會覆蓋目前畫面，繼續？')) return;
+  S=JSON.parse(d); syncForm(); renderAll(); renderChars(); renderScenes();
+}
+function newProject(){
+  if(!confirm('清空目前內容？建議先「備份」。')) return;
+  S=blank(); syncForm(); renderAll(); renderChars(); renderScenes();
+}
+/* 內建範例：偵探推理短篇的單元開場，示範四段式組裝 */
+function loadDemo(){
+  if(!confirm('載入內建範例會覆蓋目前內容，繼續？')) return;
+  S = {
+    meta:{title:'雨夜來客（示範）', unit:'單元一：暴雨與十九分鐘', model:'Seedream 5.0 Pro', ratio:'16:9', wpm:260},
+    style:DEF_STYLE, styleEn:'', neg:DEF_NEG,
+    chars:[
+      {id:'c1',name:'林佑安',role:'主角',ref:'refs/lin-youan.png',face:.85,body:.5,
+       desc:'30 歲瘦高男子，黑色短髮自然偏分，菱形臉下顎線條銳利，左手無名指戴一枚舊式黃銅戒指，身穿米白色風衣搭配深藍高領毛衣，神情冷靜銳利'},
+      {id:'c2',name:'陳雨柔',role:'委託人',ref:'refs/chen-yurou.png',face:.85,body:.5,
+       desc:'28 歲女子，及肩黑髮紮成低馬尾，圓臉配細長眉眼，身穿駝色長版大衣內搭黑色高領，頸間一條細銀鍊，神情疲憊但眼神倔強'}
+    ],
+    scenes:[
+      {id:'s1',name:'偵探事務所',type:'室內',ref:'refs/office.png',body:.65,
+       desc:'昏暗的偵探事務所，中央是深色木質書桌，右側整面牆為滿載舊書的書架，左側百葉窗透進微弱夜色，桌面唯一光源是綠色罩子檯燈'},
+      {id:'s2',name:'雨夜街道',type:'室外',ref:'refs/street.png',body:.65,
+       desc:'深夜的舊城區街道，兩側是密集的老式公寓騎樓，濕滑柏油路面反射霓虹招牌，細雨中遠處路口亮著一盞昏黃路燈'}
+    ],
+    shots:[
+      {id:'S001',narr:'九月十七號的傍晚，暴雨籠罩整座城市。',size:'大遠景',move:'緩慢下移',dur:5,charId:'',sceneId:'s2',lens:'極遠景，暴雨中的城市街道天際線，霓虹燈光在積水中反射',st:'✅',file:'U1_S001_v1.png'},
+      {id:'S002',narr:'林佑安坐在書桌後，手中的筆停在半空。',size:'中景',move:'緩慢推近',dur:5,charId:'c1',sceneId:'s1',lens:'偵探坐在書桌後方，手持鋼筆停在半空，視線向窗外',st:'✅',file:'U1_S002_v1.png'},
+      {id:'S003',narr:'門鈴響了三聲，短促、遲疑。',size:'物件',move:'固定',dur:3,charId:'',sceneId:'s1',lens:'門邊老式黃銅門鈴的微距特寫，金屬表面有氧化痕跡',st:'✅',file:'U1_S003_v1.png'},
+      {id:'S004',narr:'「你遲到了十九分鐘。」',size:'特寫',move:'固定',dur:3,charId:'c1',sceneId:'s1',lens:'偵探的雙眼，銳利的審視目光，眼神沉靜',st:'✅',file:'U1_S004_v1.png'},
+      {id:'S005',narr:'女人站在門口，雨水順著大衣下襬滴落。',size:'遠景',move:'緩慢推近',dur:5,charId:'c2',sceneId:'s1',lens:'女人站在事務所門口，全身入鏡，雨水從大衣下襬滴落地面',st:'🔄',file:''},
+      {id:'S006',narr:'她的右手緊緊攥著一只牛皮紙信封。',size:'大特寫',move:'緩慢推近',dur:4,charId:'c2',sceneId:'s1',lens:'手部大特寫，緊緊攥著一只邊角磨損的牛皮紙信封，指節發白',st:'🔄',file:''},
+      {id:'S007',narr:'「我要找一個人。他已經失蹤三年了。」',size:'近景',move:'固定',dur:6,charId:'c2',sceneId:'s1',lens:'女人胸部以上近景，視線微微下移，嘴唇緊抿',st:'🔄',file:''},
+      {id:'S008',narr:'檯燈的光落在信封上，郵戳日期是三天前。',size:'物件',move:'緩慢右移',dur:5,charId:'',sceneId:'s1',lens:'信封平放在木桌上，檯燈側光，郵戳與日期清晰可見',st:'🔄',file:''}
+    ]
+  };
+  syncForm(); renderAll(); renderChars(); renderScenes();
+  alert('已載入範例：2 個角色、2 個場景、8 個鏡頭。可切到「鏡頭表」看 prompt 自動組裝。');
+}
+function syncForm(){
+  $('#m-title').value=S.meta.title; $('#m-unit').value=S.meta.unit;
+  $('#m-model').value=S.meta.model; $('#m-ratio').value=S.meta.ratio; $('#m-wpm').value=S.meta.wpm;
+  $('#s-style').value=S.style; $('#s-styleEn').value=S.styleEn; $('#s-neg').value=S.neg;
+}
+function dl(name, text, type){
+  const b=new Blob([text],{type:type||'text/plain;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function exportJSON(){ dl('novel-project.json', JSON.stringify(S,null,2), 'application/json'); }
+function importJSON(e){
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ S=JSON.parse(r.result); syncForm(); renderAll(); renderChars(); renderScenes(); alert('匯入成功'); }
+    catch(err){ alert('檔案格式錯誤'); } };
+  r.readAsText(f); e.target.value='';
+}
+function exportCSV(){
+  const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const rows=[['shot_id','時間碼','旁白','景別','運鏡','時長秒','角色','場景','鏡頭描述','參考設定','完整prompt','狀態','檔案']];
+  S.shots.forEach((s,i)=>rows.push([s.id,timecode(i),s.narr,s.size,s.move,s.dur,
+    charById(s.charId)?.name||'',sceneById(s.sceneId)?.name||'',s.lens,refHint(s),buildPrompt(s),s.st,s.file||'']));
+  dl('shot-list.csv','﻿'+rows.map(r=>r.map(q).join(',')).join('\n'),'text/csv;charset=utf-8');
+}
+function exportPrompt(){
+  const t=S.shots.map((s,i)=>`===== ${s.id} | ${timecode(i)} | ${s.size}/${s.move}/${s.dur}s =====
+參考設定：${refHint(s)}${s.charId?'（上傳 '+charById(s.charId)?.ref+'）':''}
+
+${buildPrompt(s)}
+
+`).join('\n');
+  dl('prompts.txt', t+'\n===== 反向提示詞 =====\n'+S.neg);
+}
+function exportMD(){
+  let m=`# ${S.meta.title} — ${S.meta.unit||'未命名單元'}\n\n> ${S.meta.model} ｜ ${S.meta.ratio} ｜ 旁白 ${S.meta.wpm} 字/分\n\n`;
+  m+=`## 角色\n\n`+S.chars.map(c=>`### ${c.name}（${c.role||'—'}）\n\n參考圖：\`${c.ref||'未設定'}\` ｜ 臉部 ${num(c.face,.85).toFixed(2)} ｜ 主體 ${num(c.body,.5).toFixed(2)}\n\n\`\`\`\n${c.desc}\n\`\`\`\n`).join('\n');
+  m+=`\n## 場景\n\n`+S.scenes.map(c=>`### ${c.name}（${c.type||'—'}）\n\n參考圖：\`${c.ref||'未設定'}\` ｜ 主體 ${num(c.body,.65).toFixed(2)}\n\n\`\`\`\n${c.desc}\n\`\`\`\n`).join('\n');
+  m+=`\n## 鏡頭表\n\n| ID | 時間 | 景別 | 運鏡 | 秒 | 旁白 |\n|---|---|---|---|---|---|\n`+
+    S.shots.map((s,i)=>`| ${s.id} | ${timecode(i)} | ${s.size} | ${s.move} | ${s.dur} | ${(s.narr||'').replace(/\|/g,'\\|').slice(0,40)} |`).join('\n');
+  m+=`\n\n## 畫風基底\n\n\`\`\`\n${S.style}\n\`\`\`\n\n### 反向提示詞\n\n\`\`\`\n${S.neg}\n\`\`\`\n`;
+  dl('project.md', m, 'text/markdown;charset=utf-8');
+}
+function copyAll(){
+  const t=S.shots.map(s=>`### ${s.id}（${s.size}/${s.move}/${s.dur}s，${refHint(s)}）\n${buildPrompt(s)}`).join('\n\n---\n\n')
+    +'\n\n【反向提示詞】\n'+S.neg;
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(t).then(()=>alert('已複製到剪貼簿（'+S.shots.length+' 個 prompt）。'),
+      ()=>{ promptView(); alert('瀏覽器拒絕存取，請從提示框手動選取複製。'); });
+  } else {
+    // file:// 或非安全上下文：退回舊版 execCommand
+    const ta=document.createElement('textarea');
+    ta.value=t; ta.style.cssText='position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+    if(ok) alert('已複製到剪貼簿（'+S.shots.length+' 個 prompt）。');
+    else { promptView(); alert('此瀏覽器不允許自動複製，請從提示框手動選取。'); }
+  }
+}
+
+/* ═══════════ tabs ═══════════ */
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); $('#p-'+b.dataset.p).classList.add('on');
+  };
+});
+document.querySelectorAll('.mask').forEach(m=>m.onclick=e=>{ if(e.target===m) m.classList.remove('on'); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.mask').forEach(m=>m.classList.remove('on')); });
+
+/* ═══════════ 啟動 ═══════════ */
+syncForm(); renderAll(); renderChars(); renderScenes(); renderSizes();
+
+// 載入本機資料
+try{ const d=get(KEY); if(d){ S=JSON.parse(d); syncForm(); renderAll(); renderChars(); renderScenes(); } }catch(e){}
+
+// 儲存不可用時明示，避免使用者白忙
+if(!storageOK){
+  const w=document.createElement('div');
+  w.className='note'; w.style.cssText='position:fixed;bottom:12px;left:12px;right:12px;z-index:200;border-color:var(--red);background:rgba(232,68,122,.12)';
+  w.innerHTML='<b style="color:var(--red)">⚠ 此瀏覽器封鎖本機儲存。</b>資料只存在記憶體，關掉視窗會遺失。請用「備份」下載 JSON、「匯入」讀回。';
+  document.body.appendChild(w);
+}
+</script>
+</body>
+</html>
