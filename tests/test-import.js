@@ -606,6 +606,20 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     ok(u[u.length - 1].to === r.shots.length - 1, '單元涵蓋到最後一鏡', '');
   })();
 
+  /* 造型去重：同一篇裡的角色不能穿一模一樣的衣服 ——
+     黑色電影風格曾經讓四個角色（含嫌疑人和警察）拿到一字不差的
+     「深灰風衣內搭白襯衫」，鎖臉就完全失效，而且測試全過沒人發現。 */
+  (() => {
+    const line = '鄭組長說道：「先別動。」老徐點了點頭。小陳走了進來。跛腳劉笑了。石頭李看著他。';
+    const t = Array.from({ length: 40 }, () => line).join('') +
+      '他穿著風衣走在街上，夜色很暗。'.repeat(6);
+    const a = analyzeNovel(t, { secPerShot: 4, maxChars: 8, maxScenes: 6, wpm: 260 });
+    const outfits = a.persons.map(p => (p.descDraft || '').split('；')[2] || '');
+    const used = outfits.filter(Boolean);
+    ok(used.length >= 3, '合成測資至少判出 3 個角色（否則這條測不到東西）', used.length + '：' + used.join(' / '));
+    ok(new Set(used).size === used.length, '同篇角色不會穿到一模一樣的衣服', used.join(' / '));
+  })();
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();

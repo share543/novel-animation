@@ -1886,6 +1886,32 @@ function extractPersons(text, limit) {
   /* 放寬規則進來的名字要用次數把關：只出現一兩次的多半是誤判。
      門檻跟職稱一致（短篇低、長篇高）。 */
   const looseNeed = text.length < 3000 ? 2 : 3;
+
+  /* 「老徐」「小陳」這種暱稱：需要「同篇出現過全名、而且同姓」當證據。
+     實測《鋼針》的被害人「老徐」在文中出現 71 次，卻一次都沒出現在「名字＋動詞」
+     的位置（都是「老徐的住處」「說老徐人最好」「老徐家跑出來」），所有位置規則
+     都拿不到它 —— 而「徐柱」出現過五次，姓徐，所以老徐就是徐柱。
+     沒有全名當證據時不猜，否則「老家」「小王八蛋」都會被收成人名。 */
+  (function () {
+    /* 常見姓氏。不能只靠「同篇出現過的全名」當證據 —— 「徐柱」本身也沒被抽到
+       （只出現五次、沒有「名字＋動詞」的位置），拿它當證據等於互相等待。 */
+    const SURNAMES = '王李張劉陳楊黃趙周吳徐孫馬朱胡郭何高林羅鄭梁謝宋唐許韓馮鄧曹彭曾蕭田董袁潘于蔣蔡余杜葉程蘇魏呂丁沈任姚盧姜崔鍾譚陸汪范金石廖賈夏韋方白鄒孟熊秦邱江尹薛閻段雷侯龍史陶黎賀顧毛郝龔邵萬錢嚴覃武戴莫孔向湯';
+    const surnames = new Set(SURNAMES.split(''));
+    /* 暱稱後面要接這些字才算「被當成人用」：老徐的／老徐家／老徐說／老徐又… */
+    const NICKEY = /[的家說道是人也被在和跟向對問答死活來去走坐站笑哭看聽想做拿放掃點搖嘆]/;
+    const nick = new Map();
+    const re = /[老小]([\u4e00-\u9fff])/g;
+    let m;
+    while ((m = re.exec(text))) {
+      if (!surnames.has(m[1])) continue;
+      const w = m[0];
+      const after = text.charAt(m.index + w.length);
+      if (!NICKEY.test(after)) continue;   /* 「小王八蛋」的「小王」不會被收 */
+      nick.set(w, (nick.get(w) || 0) + 1);
+    }
+    for (const [w, c] of nick) if (c >= looseNeed && !cnt.has(w)) cnt.set(w, c);
+  })();
+
   const names = [...cnt.entries()]
     .filter(([name, count]) => !loose.has(name) || count >= looseNeed)
     .map(([name, count]) => ({ name, count, role: '' }))
@@ -3481,7 +3507,8 @@ function draftPersonDesc(p, text, narrator, genders, era, styleName, rank, taken
     }
     if (era === '古裝') return '';        /* 古裝角色一律用年代服裝池 */
     if (/探長|警官|警探|刑警|警察|偵探|法醫|檢察官/.test(n))
-      return ['深色風衣內搭白襯衫，領口略鬆', '深色外套與長褲，胸前口袋插著一支筆'];
+      return ['深色風衣內搭白襯衫，領口略鬆', '深色外套與長褲，胸前口袋插著一支筆',
+        '深藍色夾克與長褲，腰間掛著證件套', '淺色襯衫打領帶，外罩深色西裝外套'];
     if (/母親|媽媽|奶奶|外婆|妻子|太太|姊姊|妹妹|女兒/.test(n))
       return ['樸素的深色洋裝，袖子挽到手肘，腰間繫著圍裙',
         '素色長袖上衣與長裙，布料洗得柔軟'];
@@ -3489,9 +3516,18 @@ function draftPersonDesc(p, text, narrator, genders, era, styleName, rank, taken
       return ['深色襯衫配西裝褲，腰上皮帶扣明顯', '深色夾克內搭襯衫，衣著樸素整潔'];
     if (/學生|少年|少女|徒弟/.test(n))
       return ['白襯衫配深色長褲，肩上一只舊書包'];
-    /* 古裝題材就算被判成 noir，也不能給風衣 —— 年代優先於題材 */
+    /* 古裝題材就算被判成 noir，也不能給風衣 —— 年代優先於題材。
+       但這一條以前是「風格蓋掉身份」：實測《鋼針》被判黑色電影後，
+       鄭組長、小陳、跛腳劉、石頭李四個人拿到一字不差的「深灰風衣內搭白襯衫」，
+       連嫌疑人和警察都分不出來 —— 鎖臉就白做了。多給幾個變體，
+       讓同篇去重（taken）真的能把它們錯開。 */
     if (era !== '古裝' && styleName === '黑色電影')
-      return ['深灰風衣內搭白襯衫，領口略鬆', '深色大衣配長褲，圍著一條舊圍巾'];
+      return ['深灰風衣內搭白襯衫，領口略鬆', '深色大衣配長褲，圍著一條舊圍巾',
+        '炭灰色短外套內搭深色襯衫，袖口磨出痕跡', '深色針織衫外罩舊風衣，衣襬有幾道摺痕',
+        '深藍色大衣內搭高領上衣，肩上背著一個舊側背包',
+        '黑色短大衣內搭灰襯衫，領子立起', '深灰色西裝外套配深色長褲，袖口反折',
+        '舊皮夾克內搭深色上衣，拉鍊沒拉上', '深色長大衣配圍巾，帽沿壓低',
+        '墨綠色軍裝外套搭深色長褲，腰間繫著皮帶'];
     return null;
   };
   const look = suggestLook(p, text, { era: era, gender: g, outfitPick: outfitPick, rank: rank, taken: taken });
@@ -3862,7 +3898,17 @@ function visualize(chunk, ctx) {
     else if (face) s += '，' + face[1];
     if (acts.length) s += '，' + acts.map(function (a) { return a[1]; }).join('、');
     else if (crowd) s += '，與旁人同框的群像';
-    else if (!face) s += '，' + size + '反應鏡頭';
+    else if (!face) {
+      /* 有主體、沒動作、也沒表情詞時的唯一寫法 —— 要有變體，
+         否則同一個角色會連續 34 鏡寫「中景反應鏡頭」。 */
+      const rv = pickOne([
+        size + '反應鏡頭',
+        size + '，重心微側，視線落在畫面外',
+        size + '半身，肩線入鏡，表情平靜',
+        size + '，人物佔畫面一側，留出前方空間'
+      ], chunk, 'rxn', 0);
+      if (rv) s += '，' + rv;
+    }
     parts.push(s);
   }
   /* 場所只在「這裡提到的場景和當前場景不同」時寫 —— 同一場景時 prompt 的第②段
@@ -3892,8 +3938,15 @@ function visualize(chunk, ctx) {
   }
 
   if (!parts.length) {
-    /* ③-1 沒點名誰在說話的對白 —— 電影的處理是不露臉 */
-    if (ctx.dialogue) parts.push('群像或背影：說話者的肩線與手勢入鏡，不露臉');
+    /* ③-1 沒點名誰在說話的對白 —— 電影的處理是不露臉。
+       要有變體：只有一句寫法的話，實測會連續 89 鏡一字不差（罐頭感）。 */
+    if (ctx.dialogue) parts.push(pickOne([
+      '群像或背影：說話者的肩線與手勢入鏡，不露臉',
+      '過肩鏡頭：前景是聽者的肩與後腦，說話者在焦外',
+      '手部入鏡：說話的手勢落在畫面下方，臉留在畫外',
+      '背影：鏡頭從背後帶過，只見姿態不見表情',
+      '以聽者的反應帶過：說話者不入鏡，只從對話內容判斷語氣'
+    ], chunk, 'nod', 0));
     /* ③-2 這句在回憶／思考／推論／時間推移… → 有對應的鏡頭語言。
        一定要排在「場景空景」前面：場景幾乎每一鏡都承接得到，先判場景的話
        917 鏡會全部變成空景，把真正有資訊的分類全擋掉（實測就是這樣）。 */
@@ -3903,7 +3956,13 @@ function visualize(chunk, ctx) {
     }
     /* ③-3 還是沒有，但這一段有承接到的場景 → 用那個場景的空景（比泛用提示有用得多） */
     if (!parts.length && ctx.scene) {
-      parts.push(ctx.scene + '：' + (PLACE_FLAVOR[ctx.sceneType] || '環境交代') + '的空景，畫面裡沒有人');
+      const flavor = PLACE_FLAVOR[ctx.sceneType] || '環境交代';
+      parts.push(pickOne([
+        ctx.scene + '：' + flavor + '的空景，畫面裡沒有人',
+        ctx.scene + '：鏡頭緩慢橫移帶過環境，空景無人',
+        ctx.scene + '：停在一個細節上，再拉成這個場景的遠景',
+        ctx.scene + '：遠景空景，光線與空間關係交代清楚'
+      ], chunk, 'empty', 0));
     }
   }
   if (!parts.length) {
