@@ -363,6 +363,14 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   const outfits = rj.persons.map(p => p.descDraft.split('；').slice(-2, -1)[0]);
   ok(new Set(outfits).size === outfits.length, '每個角色的服裝都不同', outfits.join(' ｜ '));
 
+  /* 季節整篇一致：一部作品不會每場換季（劇本層面的視覺一致性） */
+  const seaText = '他走進書房，屋裡很暗。後來他走到街上，街上飄著雨。'
+    + '第二天，他回到公園，公園裡一個人也沒有。\n';
+  const rSea = analyzeNovel(seaText, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const seasons = rSea.places.map(p => (p.descDraft.split('；').pop() || '').trim());
+  ok(rSea.places.length >= 2 && new Set(seasons).size === 1,
+    '同一篇裡所有場景的季節一致', rSea.places.length + ' 場景 → ' + seasons.join(' ｜ '));
+
   console.log('\n=== 15a. 記憶點要分性別 ===');
   const femaleText = '淑芬說道：「我今天去市場。」美玲說道：「我陪妳去。」'
     + '王媽說道：「飯菜都備好了。」淑芬拿起菜籃，走出家門。\n';
@@ -395,6 +403,36 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     ok(off < 0.15, '每鏡 ' + sec + ' 秒的估時誤差不超過 15%',
       Math.round(off * 100) + '%');
   });
+
+  console.log('\n=== 16. 詞庫擴充與年代過濾 ===');
+  ok(typeof ROLE_WORDS !== 'undefined' && ROLE_WORDS.length >= 400,
+    '角色詞庫已擴充到 400 條以上', typeof ROLE_WORDS !== 'undefined' ? ROLE_WORDS.length : 'n/a');
+  ok(typeof PLACE_TEX_BY_NAME !== 'undefined' && PLACE_TEX_BY_NAME.length >= 80,
+    '場所材質詞庫已擴充到 80 條以上', typeof PLACE_TEX_BY_NAME !== 'undefined' ? PLACE_TEX_BY_NAME.length : 'n/a');
+  ok(typeof MARK_POOL !== 'undefined' && MARK_POOL.length >= 60,
+    '辨識記憶點池已擴充到 60 條以上', typeof MARK_POOL !== 'undefined' ? MARK_POOL.length : 'n/a');
+  ok(typeof ROLE_OUTFIT_HINTS !== 'undefined' && ROLE_OUTFIT_HINTS.length >= 50,
+    '身份→服裝資料表已接上', typeof ROLE_OUTFIT_HINTS !== 'undefined' ? ROLE_OUTFIT_HINTS.length : 'n/a');
+
+  /* 長關鍵詞優先：短詞（奔）不能蓋掉長詞（奔跑） */
+  const iPairs = ACTION_PHRASES.findIndex(x => x[0] === '奔跑');
+  const iShort = ACTION_PHRASES.findIndex(x => x[0] === '奔');
+  ok(iPairs >= 0 && iShort >= 0 && iPairs < iShort,
+    '長關鍵詞排在短關鍵詞之前（先命中先用）', '奔跑@' + iPairs + '／奔@' + iShort);
+
+  /* 年代過濾：古裝文字不能拿到現代道具 */
+  /* 角色要出現兩次以上才會被當成人物（只提一次的路人不算角色，那是正確行為） */
+  const ancText = '狄公說道：「傳仵作。」仵作說道：「回大人，死者是名繡娘。」'
+    + '繡娘的家屬跪在堂下。師爺說道：「客棧掌櫃說昨夜沒人進出。」'
+    + '掌櫃說道：「小的什麼都不知道。」仵作退到一旁，狄公走進衙門，點起油燈。\n';
+  const rAnc = analyzeNovel(ancText, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const ancAll = JSON.stringify(rAnc);
+  ok(!/手機|螢幕|燈泡|颱風|牛仔|T恤|日光燈/.test(ancAll),
+    '古裝文字不會拿到現代造型／場景／季節詞', '');
+  ok(rAnc.persons.length >= 3, '新增的角色詞能被抽成人物（仵作／繡娘／掌櫃／師爺）',
+    rAnc.persons.map(p => p.name).join('/'));
+  ok(/仵作|繡娘|掌櫃|師爺/.test(rAnc.persons.map(p => p.name).join('/')),
+    '古代職業詞（仵作／繡娘／掌櫃）有被抓到', '');
 
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
