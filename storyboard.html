@@ -4851,6 +4851,24 @@ function renderNovelReport(r) {
       : '') +
     '<h2 class="sec">👤 人物（' + r.persons.length + '）</h2><div>' + chipsOf(r.persons) + '</div>' +
     '<h2 class="sec">🏠 場景（' + r.places.length + '）</h2><div>' + chipsOf(r.places, true) + '</div>' +
+    '<h2 class="sec">📑 單元切分（' + (r.stats.unitPlans || []).length + '）</h2>' +
+    ((r.stats.unitPlans || []).length > 1
+      ? '<div class="note">一個 10–15 分鐘單元約 <b>2,600–3,900 字</b>旁白。切點落在<b>換場</b>，' +
+        '不會在對話中途斷掉；找不到換場時才硬切並標記。</div>'
+      : '<div class="note">全篇不到 10 分鐘，只有一個單元 —— 可以和同系列其他短篇併成一集。</div>') +
+    '<div>' + (r.stats.unitPlans || []).map(function (u, ui) {
+      const a = r.shots[u.from] || {}, b = r.shots[u.to] || {};
+      const mm = Math.floor(u.dur / 60) + ':' + String(Math.round(u.dur % 60)).padStart(2, '0');
+      const chars = r.shots.slice(u.from, u.to + 1).reduce(function (x, s) { return x + (s.narr || '').replace(/\s/g, '').length; }, 0);
+      return '<div style="background:var(--card);border:1px solid var(--line);border-radius:8px;' +
+        'padding:8px 12px;margin-bottom:6px;font-size:.85rem">' +
+        '<b style="color:var(--gold)">U' + (ui + 1) + '</b>　<b>' + mm + '</b>　' +
+        (u.to - u.from + 1) + ' 鏡　' + chars + ' 字　' +
+        esc(a._scene || '—') + ' → ' + esc(b._scene || '—') +
+        (u.hard ? '　<span style="color:#e0a">⚠️ 無換場可用，硬切</span>' : '') +
+        (u.dur < 600 ? '　<span style="color:var(--dim)">⚠️ 短於 10 分鐘（收尾段）</span>' : '') +
+        '</div>';
+    }).join('') + '</div>' +
     '<h2 class="sec">🎬 鏡頭表預覽（前 6 / 共 ' + r.shots.length + '）</h2>' +
     r.shots.slice(0, 6).map((x, i) =>
       '<div style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 12px;' +
@@ -4934,7 +4952,9 @@ function importCast(input) {
 function unitLabelOf(r) {
   let n = (r.sourceName || '').replace(/^doc_[0-9a-f]{6,}_/i, '').replace(/_(OCR|ocr)$/, '');
   n = n.trim();
-  if (!n) n = '原稿' + (unitList().length + 1);
+  /* 貼上文字時檔名欄是佔位字串（「尚未選檔」），不能當成作品名 ——
+     自動分段之後它會變成單元標籤（「尚未選檔 U1」），必須擋掉。 */
+  if (!n || /^(尚未選檔|未命名|貼上|無標題)$/.test(n)) n = '原稿' + (unitList().length + 1);
   return n;
 }
 
@@ -4942,9 +4962,19 @@ function applyNovel() {
   if (!novelRes) return;
   const r = novelRes;
   const label = unitLabelOf(r);
-  const oldShots = S.shots.filter(function (s) { return (s.unit || '') === label; });
+  /* 自動分段：分析結果會把整篇切成 10–15 分鐘的單元（切點落在換場）。
+     單一單元時不打編號 —— 行為與以前完全相同（短篇匯入仍然只有一段）。 */
+  const plans = (r.stats && r.stats.unitPlans) || [];
+  const multi = plans.length > 1;
+  const unitOf = r.shots.map(function () { return label; });
+  if (multi) plans.forEach(function (u, ui) {
+    for (let k = u.from; k <= u.to; k++) unitOf[k] = label + ' U' + (ui + 1);
+  });
+  const labels = multi ? plans.map(function (u, ui) { return label + ' U' + (ui + 1); }) : [label];
+  const oldShots = S.shots.filter(function (s) { return labels.indexOf(s.unit || '') >= 0; });
   if (oldShots.length && !confirm('分段「' + label + '」已經存在（' + oldShots.length +
     ' 個鏡頭，可能含你的手動修改）。\n\n要以這次的分析結果取代它嗎？\n' +
+    (multi ? '這次會切成 ' + plans.length + ' 個單元。\n' : '') +
     '（同名角色仍會沿用原本的造型；其他分段完全不受影響）')) return;
 
   const cid = {}, sid = {}, added = [];
@@ -4967,9 +4997,9 @@ function applyNovel() {
   });
 
   /* ③鏡頭：只換掉同名分段的鏡頭，其他分段原封不動 */
-  const keep = S.shots.filter(function (s) { return (s.unit || '') !== label; });
-  const fresh = r.shots.map(function (x) {
-    return { unit: label, narr: x.narr, size: x.size, move: x.move, dur: x.dur,
+  const keep = S.shots.filter(function (s) { return labels.indexOf(s.unit || '') < 0; });
+  const fresh = r.shots.map(function (x, i) {
+    return { unit: unitOf[i] || label, narr: x.narr, size: x.size, move: x.move, dur: x.dur,
       charId: cid[x._who] || '', sceneId: sid[x._scene] || '', lens: x.lens, st: '🔄' };
   });
   S.shots = keep.concat(fresh);
@@ -4983,7 +5013,8 @@ function applyNovel() {
   save();
   const t = document.querySelector('nav.tabs button[data-p="shot"]');
   if (t) t.click();
-  nfMsg('已套用分段「<b>' + esc(label) + '</b>」：<b>' + fresh.length + '</b> 個鏡頭。' +
+  nfMsg('已套用' + (multi ? '<b>' + plans.length + ' 個單元</b>（' + esc(label) + '，10–15 分鐘一段）' :
+    '分段「<b>' + esc(label) + '</b>」') + '：<b>' + fresh.length + '</b> 個鏡頭。' +
     '專案目前共 <b>' + unitList().length + '</b> 段／<b>' + S.shots.length + '</b> 鏡、<b>' +
     S.chars.length + '</b> 個角色' +
     (added.length ? '（新增角色：<b>' + esc(added.join('、')) + '</b>）' : '（角色全部沿用原有造型）') +
