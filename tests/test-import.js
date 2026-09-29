@@ -356,6 +356,20 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(!/風衣|襯衫|西裝/.test(ancientDescs), '古裝題材不會給現代服裝（風衣／襯衫）', '');
   ok(/髻|束|冠|鬚|簪|布巾/.test(ancientDescs), '古裝題材的髮型符合年代', '');
 
+  /* 辨識欄位（髮型／臉型／服裝／記憶點）同篇不可重複 —— 撞在一起就失去辨識功能 */
+  const lastBits = rj.persons.map(p => p.descDraft.split('；').pop());
+  ok(new Set(lastBits).size === lastBits.length, '每個角色的辨識記憶點都不同', lastBits.join(' ｜ '));
+  const outfits = rj.persons.map(p => p.descDraft.split('；').slice(-2, -1)[0]);
+  ok(new Set(outfits).size === outfits.length, '每個角色的服裝都不同', outfits.join(' ｜ '));
+
+  console.log('\n=== 15a. 記憶點要分性別 ===');
+  const femaleText = '淑芬說道：「我今天去市場。」美玲說道：「我陪妳去。」'
+    + '王媽說道：「飯菜都備好了。」淑芬拿起菜籃，走出家門。\n';
+  const rFem = analyzeNovel(femaleText, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const femDescs = rFem.persons.map(p => p.descDraft).join('｜');
+  ok(!/叼著一根菸|舊打火機|小指少了半截|嘴角一道淺疤/.test(femDescs),
+    '女性角色不會拿到偏男性的記憶點', femDescs.slice(0, 90));
+
   /* 同一個角色重複分析兩次要拿到同一組建議（不然每次匯入長相都變） */
   const twice = analyzeNovel(jp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
   ok(JSON.stringify(twice.persons.map(p => p.descDraft)) === JSON.stringify(rj.persons.map(p => p.descDraft)),

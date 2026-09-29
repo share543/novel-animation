@@ -1410,10 +1410,17 @@ const FACE_SHAPES = ['國字臉，下顎線條明顯', '鵝蛋臉，輪廓柔和
 const EYES = ['濃眉，眼神銳利', '細眉，眼神溫和', '粗眉，眼神沉穩',
   '眉間有皺紋，眼神疲憊', '眼角下垂，神情淡然'];
 
-const MARK_POOL = ['左手腕戴著一只舊錶', '右眉上一道舊疤', '手指留有墨漬',
-  '胸前掛著舊懷錶', '嘴角一道淺疤', '習慣叼著一根菸', '頸上掛著一只小玉墜',
-  '隨身帶著一只舊打火機', '戴一副細框眼鏡', '手背上有燙傷的痕跡',
-  '耳後有一顆痣', '左手小指少了半截', '說話時習慣摸下巴', '肩上總背著一只舊布包'];
+/* n = 不分性別、m = 偏男性、f = 偏女性。
+   不分性別的話會出現「母親隨身帶著一只舊打火機」這種錯。 */
+const MARK_POOL = [
+  ['左手腕戴著一只舊錶', 'n'], ['右眉上一道舊疤', 'm'], ['手指留有墨漬', 'n'],
+  ['胸前掛著舊懷錶', 'n'], ['嘴角一道淺疤', 'm'], ['習慣叼著一根菸', 'm'],
+  ['頸上掛著一只小玉墜', 'n'], ['隨身帶著一只舊打火機', 'm'], ['戴一副細框眼鏡', 'n'],
+  ['手背上有燙傷的痕跡', 'm'], ['耳後有一顆痣', 'n'], ['左手小指少了半截', 'm'],
+  ['說話時習慣摸下巴', 'n'], ['肩上總背著一只舊布包', 'n'],
+  ['右手腕戴著一只玉鐲', 'f'], ['圍裙口袋露出針線', 'f'],
+  ['髮間插著一支素簪', 'f'], ['總習慣隨手攏一下耳邊的髮', 'f']
+];
 
 const OUTFITS = {
   '古裝': { m: ['深色長衫，腰間繫布帶', '粗布短衣與長褲，袖口挽起', '藏青色袍子，外罩舊褂'],
@@ -1442,6 +1449,16 @@ function nameHash(s) {
    加「角色序號」錯開：同一篇裡每個角色的建議一定不同。 */
 function pickOne(list, seed, salt, rank) {
   return list[(nameHash(seed + '#' + salt) + (rank || 0)) % list.length];
+}
+/* 同篇不重複 —— 辨識記憶點的用途就是「分得出是誰」，
+   兩個角色掛同一只玉墜就等於沒有記憶點。 */
+function pickUnique(list, seed, salt, rank, taken) {
+  let idx = (nameHash(seed + '#' + salt) + (rank || 0)) % list.length;
+  if (taken) {
+    for (let k = 0; k < list.length && taken.has(list[idx]); k++) idx = (idx + 1) % list.length;
+    taken.add(list[idx]);
+  }
+  return list[idx];
 }
 
 /* 文中有明寫的長相就直接用（「戴著眼鏡」「長衫」「光頭」…） */
@@ -1475,11 +1492,15 @@ function suggestLook(p, text, ctx) {
   const g = (ctx.gender === 'f') ? 'f' : 'm';
   const hintText = appearanceHints(text, p.name).join('，');
   const rk = ctx.rank || 0;
-  const hair = pickOne(HAIR[era][g], p.name, 'hair', rk);
-  const face = pickOne(FACE_SHAPES, p.name, 'face', rk);
+  const tk = ctx.taken || {};
+  const hair = pickUnique(HAIR[era][g], p.name, 'hair', rk, tk.hair);
+  const face = pickUnique(FACE_SHAPES, p.name, 'face', rk, tk.face);
   const eyes = pickOne(EYES, p.name, 'eyes', rk * 2);
-  const mark = pickOne(MARK_POOL, p.name, 'mark', rk * 5);
-  const outfit = (ctx.outfitPick && ctx.outfitPick(p, g)) || pickOne(OUTFITS[era][g], p.name, 'out', rk);
+  const markPool = MARK_POOL.filter(function (m) { return m[1] === 'n' || m[1] === g; })
+    .map(function (m) { return m[0]; });
+  const mark = pickUnique(markPool, p.name, 'mark', rk * 5, tk.mark);
+  const cand = ctx.outfitPick ? ctx.outfitPick(p, g) : null;
+  const outfit = pickUnique(cand || OUTFITS[era][g], p.name, 'out', rk, tk.out);
   return { hair: hair, face: face, eyes: eyes, outfit: outfit, mark: mark, hints: hintText };
 }
 
@@ -1494,7 +1515,7 @@ function contextsOf(text, word, span) {
   return out.join('｜');
 }
 
-function draftPersonDesc(p, text, narrator, genders, era, styleName, rank) {
+function draftPersonDesc(p, text, narrator, genders, era, styleName, rank, taken) {
   const g = (genders && genders[p.name]) || genderOf(p) || nameGender(p.name);
   const near = contextsOf(text, p.name, 12);
   const age = ['老年', '中年', '年輕', '少年', '少女'].find(function (k) { return near.indexOf(k) >= 0; });
@@ -1506,19 +1527,20 @@ function draftPersonDesc(p, text, narrator, genders, era, styleName, rank) {
     const n = pp.name;
     if (era === '古裝') return '';        /* 古裝角色一律用年代服裝池 */
     if (/探長|警官|警探|刑警|警察|偵探|法醫|檢察官/.test(n))
-      return pickOne(['深色風衣內搭白襯衫，領口略鬆', '深色外套與長褲，胸前口袋插著一支筆'], n, 'job');
+      return ['深色風衣內搭白襯衫，領口略鬆', '深色外套與長褲，胸前口袋插著一支筆'];
     if (/母親|媽媽|奶奶|外婆|妻子|太太|姊姊|妹妹|女兒/.test(n))
-      return pickOne(['樸素的深色洋裝，袖子挽到手肘，腰間繫著圍裙',
-        '素色長袖上衣與長裙，布料洗得柔軟'], n, 'job');
+      return ['樸素的深色洋裝，袖子挽到手肘，腰間繫著圍裙',
+        '素色長袖上衣與長裙，布料洗得柔軟'];
     if (/父親|爸爸|爺爺|外公|丈夫|哥哥|弟弟|兒子/.test(n))
-      return pickOne(['深色襯衫配西裝褲，腰上皮帶扣明顯', '深色夾克內搭襯衫，衣著樸素整潔'], n, 'job');
+      return ['深色襯衫配西裝褲，腰上皮帶扣明顯', '深色夾克內搭襯衫，衣著樸素整潔'];
     if (/學生|少年|少女|徒弟/.test(n))
-      return pickOne(['白襯衫配深色長褲，肩上一只舊書包'], n, 'job');
+      return ['白襯衫配深色長褲，肩上一只舊書包'];
     /* 古裝題材就算被判成 noir，也不能給風衣 —— 年代優先於題材 */
-    if (era !== '古裝' && styleName === '黑色電影') return '深灰風衣內搭白襯衫，領口略鬆';
-    return '';
+    if (era !== '古裝' && styleName === '黑色電影')
+      return ['深灰風衣內搭白襯衫，領口略鬆', '深色大衣配長褲，圍著一條舊圍巾'];
+    return null;
   };
-  const look = suggestLook(p, text, { era: era, gender: g, outfitPick: outfitPick, rank: rank });
+  const look = suggestLook(p, text, { era: era, gender: g, outfitPick: outfitPick, rank: rank, taken: taken });
 
   const head = [g === 'f' ? '女性' : (g === 'm' ? '男性' : '人物')];
   if (age) head.push(age);
@@ -1653,6 +1675,8 @@ function analyzeNovel(rawText, opt) {
   const narrator = detectNarrator(text, persons, personPack.intro);
   const genders = inferGenders(text, persons);
   const era = detectEra(text);
+  /* 造型的辨識欄位同篇不重複（重複就失去辨識功能） */
+  const taken = { hair: new Set(), face: new Set(), mark: new Set(), out: new Set() };
   const season = detectSeason(text) || SCENE_SEASON[nameHash(text.slice(0, 200)) % SCENE_SEASON.length];
 
   const places = extractPlaces(text, opt.maxScenes);
@@ -1747,7 +1771,8 @@ function analyzeNovel(rawText, opt) {
   const totalDur = shots.reduce((a, s) => a + s.dur, 0);
   return {
     persons: persons.map(function (p, i) {
-      p.descDraft = draftPersonDesc(p, text, narrator, genders, era, guessStyle(text, opt.style), i); return p;
+      p.descDraft = draftPersonDesc(p, text, narrator, genders, era,
+        guessStyle(text, opt.style), i, taken); return p;
     }),
     places: places.map(function (p, i) {
       p.descDraft = draftSceneDesc(p, text, era, i, { season: season }); return p;
