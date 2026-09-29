@@ -1676,7 +1676,7 @@ function extractPersons(text, limit) {
       }
     }
   }
-  /* 姓＋職業：「鄭刑警」「陳醫生」「李老闆」——台灣小說最常見的寫法。
+  /* 姓＋職業：「林刑警」「張醫生」「李老闆」——台灣小說最常見的寫法。
      名字只有一個姓加職業詞（總長 2-4 字），上面的 2-3 字規則抓不到
      （它往前要 2 字以上，前面只有一個姓就不夠）。 */
   const ALLOW_BEFORE = new Set(['和', '跟', '與', '同', '向', '對', '找', '問', '叫', '要', '請', '帶']);
@@ -1720,11 +1720,11 @@ function extractPersons(text, limit) {
     let c = 0, embedded = 0;
     for (let i = text.indexOf(w); i >= 0; i = text.indexOf(w, i + 1)) {
       c++;
-      /* 「鄭刑警」裡的「刑警」：前面接姓氏且姓＋職業已是抓到的名字 → 算被包住 */
+      /* 「林刑警」裡的「刑警」：前面接姓氏且姓＋職業已是抓到的名字 → 算被包住 */
       if (i > 0 && SURNAMES.has(text[i - 1]) && cnt.has(text[i - 1] + w)) embedded++;
     }
     /* 獨立出現的次數要夠，才算一個角色；全被姓名包住就不要另立角色
-       （實測：「刑警」搶走「鄭刑警」的鏡頭，鄭刑警反而 0 鏡） */
+       （實測：「刑警」搶走「林刑警」的鏡頭，林刑警反而 0 鏡） */
     if (c >= need && (c - embedded) >= need) roles.push({ name: w, count: c - embedded, role: w });
   }
   roles.sort((a, b) => b.count - a.count);
@@ -3063,8 +3063,8 @@ function draftPersonDesc(p, text, narrator, genders, era, styleName, rank, taken
   const near = contextsOf(text, p.name, 12);
   const age = ['老年', '中年', '年輕', '少年', '少女'].find(function (k) { return near.indexOf(k) >= 0; });
   let job = '';
-  /* ① 名字本身帶著職業（「陳醫生」「鄭刑警」）→ 直接用，不要模糊搜尋
-     （實測：陳醫生被判成「警察」，只因「警察」剛好出現在 ±12 字內） */
+  /* ① 名字本身帶著職業（「張醫生」「林刑警」）→ 直接用，不要模糊搜尋
+     （實測：張醫生被判成「警察」，只因「警察」剛好出現在 ±12 字內） */
   const tailRoles = ROLE_WORDS.filter(function (w) {
     return w.length >= 2 && p.name.length > w.length && p.name.slice(-w.length) === w;
   }).sort(function (a, b) { return b.length - a.length; });
