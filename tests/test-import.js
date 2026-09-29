@@ -434,6 +434,30 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(/仵作|繡娘|掌櫃|師爺/.test(rAnc.persons.map(p => p.name).join('/')),
     '古代職業詞（仵作／繡娘／掌櫃）有被抓到', '');
 
+  console.log('\n=== 17. 真實短篇（鄭探長探案）修好的五個坑 ===');
+  /* 素材取自真實作品《醫生之死》開頭：姓＋職業、對白句型、稱謂性別 */
+  const real = '「小陳，活兒來了，走吧！」放下聽筒，鄭刑警一口將豆漿喝光。\n'
+    + '小陳緊了緊腳步，跟上鄭刑警並排走著。\n'
+    + '「組長說虎頭山發現了一具屍體。」鄭刑警輕鬆地說著，小陳卻緊張起來。\n'
+    + '不久，鄭刑警和小陳下了車。竹林裡，陳醫生趴臥在落葉上，後腦有一處傷口。\n'
+    + '「是我發現的。」阿婆說道，「我一早來掃墓，就看見他躺在那裡。」\n'
+    + '鄭刑警皺著眉頭，站起身來，對著小陳說道：「拍照，採證，一條線索都不能漏。」\n'
+    + '那天晚上，鄭刑警回到家裏，坐在書桌前翻閱卷宗，桌上擺著一只證物袋。\n';
+  const rr = analyzeNovel(real, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const rnames = rr.persons.map(p => p.name);
+  ok(rnames.includes('鄭刑警'), '「姓＋職業」(鄭刑警) 被抓成人物', rnames.join('/'));
+  ok(rnames.includes('陳醫生'), '「陳醫生」被抓成人物', rnames.join('/'));
+  ok(!rnames.includes('刑警'), '「刑警」不會另外變成一個角色（不搶鄭刑警的鏡）', rnames.join('/'));
+  ok(rnames.includes('小陳'), '「對著小陳說道」句型抓到小陳（著不當邊界）', rnames.join('/'));
+  const chen = rr.persons.find(p => p.name === '陳醫生');
+  ok(chen && /醫生/.test(chen.descDraft || ''), '陳醫生的身份是醫生（不是附近的警察）',
+    chen ? (chen.descDraft || '').slice(0, 30) : 'n/a');
+  const apo = rr.persons.find(p => p.name === '阿婆');
+  ok(apo && /女性/.test(apo.descDraft || ''), '阿婆判成女性（稱謂結尾判性別）',
+    apo ? (apo.descDraft || '').slice(0, 30) : 'n/a');
+  ok(!rr.narrator || rr.narrator.name !== '阿婆', '「是我發現的」不會讓阿婆變成敘述者',
+    JSON.stringify(rr.narrator));
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
