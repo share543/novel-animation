@@ -525,6 +525,12 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     const g = analyzeNovel('狄公升堂，衙門公堂上差役喝道，師爺捧著卷宗上前。'.repeat(4), opt);
     const gd = g.places.map(p => p.descDraft).join('｜');
     ok(/宣紙|太師椅|屏風|燭火|青磚|差役|衙門/.test(gd), '真有衙門師爺時仍判古裝', gd.slice(0, 40));
+    /* 自然場景不能拿到都會描述（實測：鯉魚潭畔的相思林變成都市人行道） */
+    const n = analyzeNovel('阿明走進相思林，蹲在草叢後面。' + '林間很暗，地上是落葉與枯枝。'.repeat(20)
+      + '他抬起頭。' + '風吹過灌木。'.repeat(20), opt);
+    const nd = n.places.map(p => p.descDraft).join('｜');
+    ok(!/高樓|玻璃帷幕|人行道|騎樓|連鎖磚|月台日光燈|招牌霓虹/.test(nd),
+      '自然場景（相思林／草叢）不會拿到都會描述', nd.slice(0, 44));
   })();
 
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
