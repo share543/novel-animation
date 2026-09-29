@@ -507,6 +507,26 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
       '代名詞／數詞不會被當成人名', nc.join('／'));
   })();
 
+  console.log('\n=== 21. 年代與季節判定 ===');
+  (function () {
+    const opt = { secPerShot: 4, maxChars: 8, maxScenes: 4, wpm: 260 };
+    /* 「警官大人」是現代用法，不能因此把整篇判成古裝（實測災情：場景變宣紙太師椅） */
+    const m = analyzeNovel('鄭組長走進賓館，女經理說：「哦，是警官大人，對不起。」\n'
+      + '他拿起電話打回分局。\n小陳開著汽車趕來，帶著驗屍報告。\n'
+      + '旅館櫃檯擺著登記簿，牆上掛著冷氣。\n保險公司的人也到了。', opt);
+    const md = m.places.map(p => p.descDraft).join('｜');
+    ok(!/宣紙|太師椅|屏風|燭火|青磚/.test(md), '現代故事不會因「警官大人」判成古裝', md.slice(0, 40));
+    /* 盛暑＋八月＝夏天（原本只掃前 600 字，長文常抓不到） */
+    const s = analyzeNovel('盛暑的八月二十日，天氣熱得讓人受不了。街上沒有半個人。'
+      + '公園裡的樹都垂著葉子。' + '阿明走到路口，又折回巷口。'.repeat(25) + '蟬聲不斷。', opt);
+    const sd = s.places.map(p => p.descDraft).join('｜');
+    ok(/夏天/.test(sd), '「盛暑＋八月」判成夏天', sd.slice(0, 40));
+    /* 真正的古裝仍然要判對 */
+    const g = analyzeNovel('狄公升堂，衙門公堂上差役喝道，師爺捧著卷宗上前。'.repeat(4), opt);
+    const gd = g.places.map(p => p.descDraft).join('｜');
+    ok(/宣紙|太師椅|屏風|燭火|青磚|差役|衙門/.test(gd), '真有衙門師爺時仍判古裝', gd.slice(0, 40));
+  })();
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();

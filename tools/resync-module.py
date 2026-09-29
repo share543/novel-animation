@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""把 storyboard.html 裡的「小說匯入」模組區塊，與 scratch 的核心檔重新同步。
-   教訓：改了 scratch 的核心檔之後，一定要重新組裝，否則出貨的是舊版。"""
+"""把 storyboard.html 的「小說匯入」模組區塊，與 repo 的 src/ 來源重新組裝。
+   教訓：來源改了一定要重新組裝，否則出貨的是舊版。
+   來源一律取 repo 的 src/（唯一真實來源）—— 先前讀 scratch 的複本，
+   合併脚本卻寫 src/，兩邊不同步就會默默出貨舊版。"""
 import sys, re, pathlib, subprocess
 
-HTML = pathlib.Path('/home/arthur/novel-animation/storyboard.html')
-CORE = pathlib.Path('/home/arthur/.hermes/cache/scratch/novel-import-core.js').read_text(encoding='utf-8').strip()
-UI = pathlib.Path('/home/arthur/.hermes/cache/scratch/novel-import-ui.js').read_text(encoding='utf-8').strip()
-PDF = pathlib.Path('/home/arthur/.hermes/cache/scratch/novel-import-pdf.js').read_text(encoding='utf-8').strip()
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+HTML = ROOT / 'storyboard.html'
+CORE = (ROOT / 'src' / 'novel-import-core.js').read_text(encoding='utf-8').strip()
+UI = (ROOT / 'src' / 'novel-import-ui.js').read_text(encoding='utf-8').strip()
+PDF = (ROOT / 'src' / 'novel-import-pdf.js').read_text(encoding='utf-8').strip()
 
 START = '/* ═══════════ 小說匯入（純離線：讀檔 → 抽取 → 產生專案） ═══════════'
 END = '/* ═══════════ tabs ═══════════ */'
