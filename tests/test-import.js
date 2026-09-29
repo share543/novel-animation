@@ -337,7 +337,29 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     '每個人物都有描述草稿', rj.persons.map(p => p.name + ':' + p.descDraft.length).join(' '));
   const father = rj.persons.find(p => p.name === '父親');
   ok(father && /男性/.test(father.descDraft), '角色詞推出性別（父親→男性）', father && father.descDraft);
-  ok(father && /待補/.test(father.descDraft), '長相明確標成待補，不亂編', '');
+  /* 造型建議：髮型／臉型／服裝／辨識記憶點四格都要有具體內容，
+     不能留「待補」——那串括號會被當成 prompt 第①段送出去。 */
+  ok(father && father.descDraft.length >= 30, '描述草稿有實質內容（非空泛）', father && father.descDraft);
+  ok(father && !/待補/.test(father.descDraft), '不再有「待補」字樣（會污染 prompt）', father && father.descDraft);
+  ok(father && /，/.test(father.descDraft), '描述草稿含造型描述（髮型＋臉型）', '');
+  const looks = rj.persons.map(p => p.descDraft.split('；').slice(1).join('；'));
+  ok(new Set(looks).size === looks.length, '同一篇裡每個角色的造型建議都不同',
+    looks.join(' ｜ '));
+
+  console.log('\n=== 15b. 造型建議的年代與題材 ===');
+  const ancient = '狄公說道：「此案有疑。」馬榮說道：「屬下這就去查。」'
+    + '洪亮說道：「卷宗在此。」周氏說道：「大人明鑑。」'
+    + '狄公拿起銀兩，命人備馬，客官在客棧等著。\n';
+  const ra = analyzeNovel(ancient, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const ancientDescs = ra.persons.map(p => p.descDraft).join('｜');
+  ok(/長衫|袍子|襖裙|衣裙|短衣/.test(ancientDescs), '古裝題材給古裝服裝', ancientDescs.slice(0, 80));
+  ok(!/風衣|襯衫|西裝/.test(ancientDescs), '古裝題材不會給現代服裝（風衣／襯衫）', '');
+  ok(/髻|束|冠|鬚|簪|布巾/.test(ancientDescs), '古裝題材的髮型符合年代', '');
+
+  /* 同一個角色重複分析兩次要拿到同一組建議（不然每次匯入長相都變） */
+  const twice = analyzeNovel(jp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  ok(JSON.stringify(twice.persons.map(p => p.descDraft)) === JSON.stringify(rj.persons.map(p => p.descDraft)),
+    '同一份原稿重複分析，造型建議完全一致（可重現）', '');
   const nb = rj.persons.find(p => p.name === '鄭木貴');
   ok(nb && /第一人稱敘述者/.test(nb.descDraft), '敘述者被標記出來', nb && nb.descDraft);
   ok(rj.places.every(p => p.descDraft), '每個場景都有描述草稿',

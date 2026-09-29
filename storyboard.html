@@ -132,7 +132,7 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
 <div class="panel on" id="p-dash">
   <div class="note">
     <b>流程：</b>建人物參考設定 → 建場景設定 → 填鏡頭表（prompt 自動組裝）→ 批次生成 → QC → 剪輯。<br>
-    <b>核心：</b>①與②的描述字串<b>永不手改</b>，只在鏡頭表改第③段。改了就會失去一致性。
+    <b>核心：</b>①人物與②場景的固定描述<b>整部片要一致</b>（匯入小說時會自動填好草稿，可自行調整後鎖定）；只有第③段每鏡不同。
   </div>
   <div class="srow">
     <div class="stat"><b id="s-char">0</b><span>角色</span></div>
@@ -528,7 +528,7 @@ function editChar(id){
     <div class="msec">參考設定（即夢）</div>
     <div class="grid c3">${F('ref','參考圖路徑',c.ref,'refs/lin-youan.png')}
       ${F('face','臉部參考強度',c.face,'0.85','number')}${F('body','主體參考強度',c.body,'0.5','number')}</div>
-    <div class="msec">描述字串（第①段，永不手改）</div>
+    <div class="msec">固定描述字串（第①段，整部片一致）</div>
     <div class="f"><textarea id="f_desc" rows="5">${esc(c.desc)}</textarea>
       <small>50–80 字，必須包含：性別年齡 + 髮型 + 臉部特徵 + 固定服裝 + 一個辨識記憶點</small></div>
     <div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
@@ -548,7 +548,7 @@ function editScene(id){
     <div class="msec">基本</div>
     <div class="grid c3">${F('name','場景名稱',s.name)}${F('type','類型',s.type)}
       ${F('ref','參考圖路徑',s.ref,'refs/office.png')}${F('body','主體參考強度',s.body,'0.65','number')}</div>
-    <div class="msec">描述字串（第②段，永不手改）</div>
+    <div class="msec">固定描述字串（第②段，整部片一致）</div>
     <div class="f"><textarea id="f_desc" rows="5">${esc(s.desc)}</textarea>
       <small>40–60 字：空間類型 + 幾項固定陳設 + 光線 + 氛圍</small></div>
     <div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">
@@ -1375,6 +1375,114 @@ function lastMentioned(chunk, names) {
   return name;
 }
 
+/* ── 造型建議（髮型／臉型／服裝／辨識記憶點）──
+   小說通常不寫長相，但「留空」對使用者沒幫助，而且待補括號會混進 prompt。
+   改成給具體建議：用「年代 × 性別 × 身份」挑，並用名字雜湊固定挑選結果
+   ——同一個角色每次匯入都拿到同一組，不會這次長這樣、下次長那樣。 */
+
+const ERA_RULES = [
+  [/衙門|縣衙|公堂|客棧|客官|辮子|長衫|銀兩|江湖|大人|老爺|師爺|馬匹|刀劍/, '古裝'],
+  [/民國|日治|旗袍|中山裝|洋行|學堂|騎樓|留聲機/, '近代']
+];
+function detectEra(text) {
+  for (const r of ERA_RULES) if (r[0].test(text)) return r[1];
+  return '現代';
+}
+
+const HAIR = {
+  '現代': {
+    m: ['短黑髮自然蓬鬆', '短黑髮略亂，髮線略高', '俐落短髮，鬢角修齊', '短髮向後梳整齊',
+      '略長的黑髮，常隨手撥到耳後'],
+    f: ['及肩直髮，髮尾微捲', '長髮簡單紮成低馬尾', '齊耳短鮑伯頭', '長髮盤起，幾縷散落頰側']
+  },
+  '近代': {
+    m: ['短髮梳整齊，三七分', '抹了油的短髮，梳得一絲不苟', '平頭'],
+    f: ['及腰長髮盤成髻', '齊耳短髮，以髮夾固定', '長辮垂在身後']
+  },
+  '古裝': {
+    m: ['長髮束於頂，戴小冠', '長髮以布巾束起', '髮髻整齊，蓄短鬚'],
+    f: ['長髮盤髻，插一支木簪', '雙髻垂於耳側', '長髮以素色布巾包起']
+  }
+};
+
+const FACE_SHAPES = ['國字臉，下顎線條明顯', '鵝蛋臉，輪廓柔和', '瘦削臉，顴骨略高',
+  '圓臉，臉頰有肉', '長臉，眉骨突出', '方臉，線條剛硬'];
+const EYES = ['濃眉，眼神銳利', '細眉，眼神溫和', '粗眉，眼神沉穩',
+  '眉間有皺紋，眼神疲憊', '眼角下垂，神情淡然'];
+
+const MARK_POOL = ['左手腕戴著一只舊錶', '右眉上一道舊疤', '手指留有墨漬',
+  '胸前掛著舊懷錶', '嘴角一道淺疤', '習慣叼著一根菸', '頸上掛著一只小玉墜',
+  '隨身帶著一只舊打火機', '戴一副細框眼鏡', '手背上有燙傷的痕跡',
+  '耳後有一顆痣', '左手小指少了半截', '說話時習慣摸下巴', '肩上總背著一只舊布包'];
+
+const OUTFITS = {
+  '古裝': { m: ['深色長衫，腰間繫布帶', '粗布短衣與長褲，袖口挽起', '藏青色袍子，外罩舊褂'],
+            f: ['素色衣裙，腰間繫帶', '深色襖裙，袖口繡簡單花紋'] },
+  '近代': { m: ['淺色襯衫配深色長褲，皮帶扣明顯', '深色三件式西裝，領口略鬆', '短襟上衣與寬褲'],
+            f: ['素色旗袍，外搭短外套', '深色洋裝，袖口滾邊', '上衣配長裙，布料樸素'] },
+  '現代': { m: ['深色襯衫配西裝褲，腰上皮帶扣明顯', '深灰風衣內搭白襯衫，領口略鬆',
+              '素色針織衫外搭舊夾克', '白襯衫配深色長褲，肩上一只舊布包'],
+            f: ['樸素的深色洋裝，袖子挽到手肘', '素色長袖上衣與長裙，腰間繫圍裙',
+              '淺色襯衫配長裙，外搭針織外套'] }
+};
+
+/* 名字雜湊：同一角色固定拿到同一組建議 */
+function nameHash(s) {
+  /* FNV-1a：短名字用 (h*31+c)%99991 容易撞同一組建議（實測三個角色拿到同一組眼神） */
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  /* 必須再做一次雪崩混合：中文兩字名在 FNV 的低位有偏誤，
+     實測 mod 6 全部落在同一個值（四個角色拿到同一種臉型）。 */
+  h ^= h >>> 15; h = Math.imul(h, 2246822507) >>> 0;
+  h ^= h >>> 13; h = Math.imul(h, 3266489909) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+/* 池子小時單靠雜湊很容易撞（實測古裝 4 個角色拿到同一套服裝）。
+   加「角色序號」錯開：同一篇裡每個角色的建議一定不同。 */
+function pickOne(list, seed, salt, rank) {
+  return list[(nameHash(seed + '#' + salt) + (rank || 0)) % list.length];
+}
+
+/* 文中有明寫的長相就直接用（「戴著眼鏡」「長衫」「光頭」…） */
+const APPEARANCE_HINTS = [
+  [/戴[著了]?[一]?副眼鏡|細框眼鏡|金邊眼鏡/, '戴一副眼鏡'],
+  [/長衫/, '穿著長衫'], [/西裝/, '穿著西裝'], [/風衣/, '穿著風衣'],
+  [/旗袍/, '穿著旗袍'], [/制服/, '穿著制服'], [/圍裙/, '腰間繫著圍裙'],
+  [/白髮|銀髮/, '滿頭白髮'], [/禿/, '髮量稀疏'], [/鬍|鬚/, '蓄著鬍鬚'],
+  [/疤/, '臉上有一道疤'], [/辮子/, '蓄著辮子'], [/草帽|斗笠/, '戴著帽子'],
+  [/酒臭|酒味/, '身上帶著酒氣'], [/瘦/, '身形瘦削'], [/魁梧|壯/, '身形魁梧']
+];
+function appearanceHints(text, name) {
+  /* 只看「名字所在的子句」。用固定字數窗（±40）會跨到別人的句子——
+     實測「父親渾身散發酒臭味」的酒氣被算到母親身上。 */
+  const marks = '。！？，、；：\n「」『』（）';
+  const clauses = [];
+  for (let k = text.indexOf(name); k >= 0; k = text.indexOf(name, k + 1)) {
+    let a = k, b = k + name.length;
+    while (a > 0 && marks.indexOf(text[a - 1]) < 0) a--;
+    while (b < text.length && marks.indexOf(text[b]) < 0) b++;
+    clauses.push(text.slice(a, b));
+  }
+  const joined = clauses.join('｜');
+  const out = [];
+  for (const h of APPEARANCE_HINTS) if (h[0].test(joined)) out.push(h[1]);
+  return out;
+}
+
+function suggestLook(p, text, ctx) {
+  const era = ctx.era;
+  const g = (ctx.gender === 'f') ? 'f' : 'm';
+  const hintText = appearanceHints(text, p.name).join('，');
+  const rk = ctx.rank || 0;
+  const hair = pickOne(HAIR[era][g], p.name, 'hair', rk);
+  const face = pickOne(FACE_SHAPES, p.name, 'face', rk);
+  const eyes = pickOne(EYES, p.name, 'eyes', rk * 2);
+  const mark = pickOne(MARK_POOL, p.name, 'mark', rk * 5);
+  const outfit = (ctx.outfitPick && ctx.outfitPick(p, g)) || pickOne(OUTFITS[era][g], p.name, 'out', rk);
+  return { hair: hair, face: face, eyes: eyes, outfit: outfit, mark: mark, hints: hintText };
+}
+
 /* ── ①人物描述草稿 ──
    小說不會描述長相。能從文字推出來的是身份／年齡／氣質，
    長相一律留成明確的待補欄位 —— 不亂編，編錯了會鎖錯臉。 */
@@ -1386,39 +1494,109 @@ function contextsOf(text, word, span) {
   return out.join('｜');
 }
 
-function draftPersonDesc(p, text, narrator, genders) {
-  const bits = [];
+function draftPersonDesc(p, text, narrator, genders, era, styleName, rank) {
   const g = (genders && genders[p.name]) || genderOf(p) || nameGender(p.name);
-  bits.push(g === 'f' ? '女性' : g === 'm' ? '男性' : '（性別待補）');
   const near = contextsOf(text, p.name, 12);
   const age = ['老年', '中年', '年輕', '少年', '少女'].find(function (k) { return near.indexOf(k) >= 0; });
-  if (age) bits.push(age);
   const job = ROLE_WORDS.find(function (w) {
     return w !== p.name && !FAMILY_WORDS.has(w) && near.indexOf(w) >= 0;
   });
-  if (p.role) bits.push(p.role);
-  else if (job) bits.push(job);
-  const trait = TRAIT_PHRASES.find(function (t) { return near.indexOf(t[0]) >= 0; });
-  if (trait) bits.push(trait[1].split('，')[0]);
-  if (narrator && narrator.name === p.name) bits.push('第一人稱敘述者');
-  return bits.join('、') + '。（待補：髮型、臉型、固定服裝、辨識記憶點）';
+  /* 身份／題材決定服裝：探長配風衣、長輩配圍裙、黑色電影配風衣 */
+  const outfitPick = function (pp) {
+    const n = pp.name;
+    if (era === '古裝') return '';        /* 古裝角色一律用年代服裝池 */
+    if (/探長|警官|警探|刑警|警察|偵探|法醫|檢察官/.test(n))
+      return pickOne(['深色風衣內搭白襯衫，領口略鬆', '深色外套與長褲，胸前口袋插著一支筆'], n, 'job');
+    if (/母親|媽媽|奶奶|外婆|妻子|太太|姊姊|妹妹|女兒/.test(n))
+      return pickOne(['樸素的深色洋裝，袖子挽到手肘，腰間繫著圍裙',
+        '素色長袖上衣與長裙，布料洗得柔軟'], n, 'job');
+    if (/父親|爸爸|爺爺|外公|丈夫|哥哥|弟弟|兒子/.test(n))
+      return pickOne(['深色襯衫配西裝褲，腰上皮帶扣明顯', '深色夾克內搭襯衫，衣著樸素整潔'], n, 'job');
+    if (/學生|少年|少女|徒弟/.test(n))
+      return pickOne(['白襯衫配深色長褲，肩上一只舊書包'], n, 'job');
+    /* 古裝題材就算被判成 noir，也不能給風衣 —— 年代優先於題材 */
+    if (era !== '古裝' && styleName === '黑色電影') return '深灰風衣內搭白襯衫，領口略鬆';
+    return '';
+  };
+  const look = suggestLook(p, text, { era: era, gender: g, outfitPick: outfitPick, rank: rank });
+
+  const head = [g === 'f' ? '女性' : (g === 'm' ? '男性' : '人物')];
+  if (age) head.push(age);
+  if (p.role) head.push(p.role);
+  else if (job) head.push(job);
+  else if (narrator && narrator.name === p.name) head.push('第一人稱敘述者');
+
+  const parts = [head.join('，')];
+  if (look.hints) parts.push(look.hints);              /* 文中明寫的長相優先 */
+  parts.push([look.hair, look.face, look.eyes].join('，'));
+  parts.push(look.outfit);
+  parts.push(look.mark);
+  return parts.filter(function (x) { return x && x.trim(); }).join('；');
 }
 
 /* ── ②場景描述草稿 ──
-   場景可以從文中線索推：地名、時間感、材質。 */
-function draftSceneDesc(pl, text) {
-  const around = contextsOf(text, pl.name, 22);
-  const bits = [];
-  const t = TIME_JUMP.find(function (x) { return around.indexOf(x[0]) >= 0; });
-  const era = ['日式', '老式', '舊', '新建', '水泥', '木造', '磚'].find(function (k) { return around.indexOf(k) >= 0; });
-  bits.push(pl.name);
-  if (pl.type) bits.push(pl.type);
-  if (era) bits.push(era);
-  if (around) {
-    const seg = around.split(/[｜，。、（）：]/).filter(function (s) { return s.indexOf(pl.name) >= 0 && s.length <= 18; })[0];
-    if (seg) bits.push('文中線索：' + seg.trim());
+   和人物一樣：留「待補」的括號會被當成 prompt 第②段送出去，
+   所以直接給具體的材質／陳設／光線／季節建議（依年代分池）。 */
+const SCENE_TEXTURE = {
+  '室內': {
+    '現代': ['水泥牆面，屋內陳設簡單，老式木桌與藤椅', '磨石子地板，牆上掛著日曆，日光燈管照明',
+      '木板隔間，家具陳舊但整潔，角落堆著雜物'],
+    '近代': ['木造隔間，磨石子地，窗櫺透進細長光線', '磚牆與木窗，屋內擺著舊式櫥櫃與掛鐘'],
+    '古裝': ['木柱與紙窗，屋內有木桌、燭台與書卷', '夯土牆面，陳設簡樸，一盞油燈照明']
+  },
+  '室外': {
+    '現代': ['柏油街道與騎樓，路邊停著腳踏車，招牌斑駁', '巷弄狹窄，兩側是老式透天厝與電線桿',
+      '空曠的空地與圍籬，遠處是工地'],
+    '近代': ['石板街道與木造店鋪，屋簷下掛著招牌', '街道兩側是低矮磚房與三輪車'],
+    '古裝': ['石板路與木造店鋪，屋簷下掛著燈籠', '土路兩側是茅屋與攤販，塵土飛揚']
   }
-  return bits.join('，') + '。（待補：建材、光線、季節、陳設細節）';
+};
+/* 光線也要分室內外 —— 戶外場景寫「屋內已點燈」是錯的 */
+const SCENE_LIGHT = {
+  '室內': ['夜間，單一燈泡光源，四周沉入暗處', '窗光斜入，明暗對比強',
+    '日光燈管照明，光線均勻偏冷', '傍晚暮色，屋內剛點起燈'],
+  '室外': ['午後斜陽，長影落在地面', '清晨薄霧，光線偏冷', '正午頂光，影子短而硬',
+    '陰天，光線均勻而平淡', '夜間，路燈與招牌光線交錯']
+};
+const SCENE_SEASON = ['夏天，空氣悶熱', '秋天，落葉堆在角落', '冬天，濕冷', '春天，地面微濕'];
+
+/* 常見場所的專屬材質 —— 泛用池會讓「公園」拿到「巷弄狹窄」這種錯的描述。 */
+const PLACE_TEX_BY_NAME = [
+  [/公園|花園|庭院|花叢/, ['草坪與樹影，長椅與小徑，四周綠意', '花圃與步道，樹冠遮蔽大半光線']],
+  [/街上|街道|街角|路口|巷|騎樓|馬路/, ['柏油街道與騎樓，路邊停著腳踏車，招牌斑駁', '巷弄狹窄，兩側是老式透天厝與電線桿']],
+  [/山城|山坡|山腳|老街|郊/, ['斜坡上的老街，兩側是低矮平房與木造店鋪，遠處是山影']],
+  [/河|溪|海|岸|港|渡/, ['水面反光，岸邊有石塊與雜草，風帶著濕氣']],
+  [/工地|空地|圍籬/, ['未完工的工地，鋼筋與水泥袋散落，塵土飛揚']],
+  [/廟|寺|教堂|祠堂/, ['廟埕空曠，屋簷與香爐在視線一角，香煙繚繞']],
+  [/市場|夜市/, ['攤位緊鄰，帆布遮棚與走道，人聲雜沓']],
+  [/車站|月台|碼頭/, ['月台邊緣與軌道延伸，日光燈管照明']],
+  [/警局|派出所|分局/, ['辦公桌與檔案櫃排成一行，頭頂是日光燈管']],
+  [/醫院|病房/, ['白色牆面與金屬病床，消毒水氣味般的冷光']]
+];
+
+/* 季節：文中明寫就用文的，沒寫就整篇挑一個固定值（不要每場換季） */
+function detectSeason(text) {
+  const s = text.slice(0, 600);
+  if (/雪|冬|寒冷|寒風/.test(s)) return '冬天，濕冷';
+  if (/春天|春雨|花開/.test(s)) return '春天，地面微濕';
+  if (/夏|炎熱|酷熱|蟬鳴/.test(s)) return '夏天，空氣悶熱';
+  if (/秋|落葉|秋風/.test(s)) return '秋天，落葉堆在角落';
+  return '';
+}
+
+function draftSceneDesc(pl, text, era, rank, ctx) {
+  const type = pl.type === '室內' ? '室內' : '室外';
+  const rk = rank || 0;
+  let tex = '';
+  for (const r of PLACE_TEX_BY_NAME) {
+    if (r[0].test(pl.name)) { tex = pickOne(r[1], pl.name, 'name', rk); break; }
+  }
+  if (!tex) tex = pickOne(SCENE_TEXTURE[type][era] || SCENE_TEXTURE[type]['現代'], pl.name, 'tex', rk);
+  const c = ctx || {};
+  const light = pickOne(SCENE_LIGHT[type], pl.name, 'slight', rk);
+  /* 季節整篇一致（同一部作品的視覺要統一），由 analyzeNovel 決定後傳進來 */
+  const season = c.season || SCENE_SEASON[nameHash(pl.name + '#ssn') % SCENE_SEASON.length];
+  return pl.name + '：' + tex + '；' + light + '；' + season;
 }
 
 /* ── 主判斷：這一段畫面裡「誰、在做什麼、什麼光」→ 第③段 ── */
@@ -1474,6 +1652,9 @@ function analyzeNovel(rawText, opt) {
   /* 第一人稱：主角可能只在「我叫X」出現一次，後面全是「我」 */
   const narrator = detectNarrator(text, persons, personPack.intro);
   const genders = inferGenders(text, persons);
+  const era = detectEra(text);
+  const season = detectSeason(text) || SCENE_SEASON[nameHash(text.slice(0, 200)) % SCENE_SEASON.length];
+
   const places = extractPlaces(text, opt.maxScenes);
 
   const sents = splitSentences(text);
@@ -1565,11 +1746,11 @@ function analyzeNovel(rawText, opt) {
   const totalChars = shots.reduce((a, s) => a + s._chars, 0);
   const totalDur = shots.reduce((a, s) => a + s.dur, 0);
   return {
-    persons: persons.map(function (p) {
-      p.descDraft = draftPersonDesc(p, text, narrator, genders); return p;
+    persons: persons.map(function (p, i) {
+      p.descDraft = draftPersonDesc(p, text, narrator, genders, era, guessStyle(text, opt.style), i); return p;
     }),
-    places: places.map(function (p) {
-      p.descDraft = draftSceneDesc(p, text); return p;
+    places: places.map(function (p, i) {
+      p.descDraft = draftSceneDesc(p, text, era, i, { season: season }); return p;
     }),
     shots, wpm, secPerShot, narrator,
     stats: {
@@ -2306,7 +2487,7 @@ function renderNovelReport(r) {
       '<div style="color:var(--dim);margin-top:2px;font-size:.78rem">第③段草稿：' + esc(x.lens) + '</div></div>'
     ).join('') +
     '<div class="note">自動抽取是<b>草稿</b>：請到 <b>①人物</b>／<b>②場景</b> 刪掉誤判的、補上漏掉的，' +
-    '並填<b>描述字串</b>（那兩段是鎖臉／鎖場景的關鍵，之後永不手改）。' +
+    '並填<b>描述字串</b>（那兩段是鎖臉／鎖場景的關鍵，整部片要一致；可先調整再用）。' +
     '鏡頭表的<b>第③段</b>才是每個鏡頭要微調的地方。</div>';
   $('#nf-report').innerHTML = html;
 }
