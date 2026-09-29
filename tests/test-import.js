@@ -460,6 +460,32 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(!rr.narrator || rr.narrator.name !== '阿婆', '「是我發現的」不會讓阿婆變成敘述者',
     JSON.stringify(rr.narrator));
 
+  console.log('\n=== 18. 詞庫格式一致性（配對 vs 純字串）===');
+  /* 純字串混進配對陣列，程式取 x[0] 會拿到單一個字（「手」），在全文亂命中。
+     真實踩過：OBJ_CLOSEUP 173 條裡有 74 條重複、93 條是純字串。 */
+  /* FACE_SHAPES／EYES／HAIR 等是「純描述的池」（直接抽一個字串來用），
+     不在這裡檢查 —— 這裡只檢查「關鍵詞 → 畫面文字」的配對陣列。 */
+  const PAIR_LISTS = { FACE_PHRASES, ACTION_PHRASES, TRAIT_PHRASES, LIGHT_PHRASES, OBJ_CLOSEUP,
+    NOUN_VISUALS, TIME_JUMP, MARK_POOL, PLACE_TEX_BY_NAME };
+  let plainStr = [], dupKeys = [];
+  for (const k of Object.keys(PAIR_LISTS)) {
+    const a = PAIR_LISTS[k];
+    const bad = a.filter(x => !Array.isArray(x)).length;
+    if (bad) plainStr.push(k + '×' + bad);
+    const seen = new Set(), dup = [];
+    for (const x of a) { const key = String(Array.isArray(x) ? x[0] : x); if (seen.has(key)) dup.push(key); seen.add(key); }
+    if (dup.length) dupKeys.push(k + '×' + dup.length + '(' + dup.slice(0, 3).join('/') + ')');
+  }
+  ok(plainStr.length === 0, '所有配對陣列都沒有純字串', plainStr.join('、'));
+  ok(dupKeys.length === 0, '所有配對陣列都沒有重複鍵', dupKeys.join('、'));
+
+  /* 物證特寫要真的進鏡頭文字（配對的 x[1] 才是畫面文字，不是 x[0]） */
+  const objText = '桌上擺著一只證物袋，裡頭裝著那個打破的藥瓶。抽屜裡翻出一封遺書，紙張有摺痕。';
+  const robj = analyzeNovel(objText, { secPerShot: 4, maxChars: 8, maxScenes: 4 });
+  const objLens = robj.shots.map(s => s.lens).join('｜');
+  ok(/藥瓶特寫：/.test(objLens), '物證特寫用配對的畫面文字（不是關鍵詞本身）', objLens.slice(0, 80));
+  ok(!/凶器,|,凶器/.test(objLens), '不會把整個配對陣列串成「凶器,凶器特寫…」', '');
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
