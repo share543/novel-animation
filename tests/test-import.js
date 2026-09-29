@@ -582,6 +582,30 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     ok(!/空景，畫面裡沒有人/.test(lens('他想起了十五年前的那個冬天。')), '有回憶線索時不該退成場景空景', '');
   })();
 
+  console.log('\n=== 24. 單元切分（10–15 分鐘，切點落在換場）===');
+  (function () {
+    const O = { secPerShot: 4, maxChars: 8, maxScenes: 8, wpm: 260 };
+    const base = '他走進現場，蹲下來看著地上的痕跡。鄭組長說道：「先別動。」現場的腳印很清楚，血跡已經乾了。';
+    const places = ['分局', '巷子', '公園', '廟前'];
+    let text = '';
+    /* 要夠長才會切出多個單元：70 次約 910 秒，剛好是一個 15 分鐘單元（碎片被併回） */
+    for (let i = 0; i < 150; i++) text += places[i % 4] + '裡，' + base;
+    const r = analyzeNovel(text, O);
+    const u = r.stats.unitPlans || [];
+    ok(u.length >= 2, '長篇會切成多個單元', '單元數 ' + u.length);
+    ok(r.stats.units === u.length, 'stats.units 與切分結果一致', r.stats.units + ' vs ' + u.length);
+    /* 每個單元（除了被併回的尾巴）都要落在 10–15 分鐘附近 */
+    const mid = u.slice(0, -1);
+    ok(mid.every(x => x.dur >= 600), '除最後一個外每個單元都達到 10 分鐘', JSON.stringify(mid.map(x => Math.round(x.dur))));
+    ok(u.every(x => x.dur <= 1200), '沒有單元超過 20 分鐘（切點失控）', JSON.stringify(u.map(x => Math.round(x.dur))));
+    /* 不能留下幾秒的碎片單元 */
+    ok(u.every(x => x.dur >= 300), '不會留下幾秒的碎片單元', JSON.stringify(u.map(x => Math.round(x.dur))));
+    /* 切點應該落在換場：每個單元的起點若不是第一鏡，就是場景轉換處 */
+    ok(u.slice(1).every(x => r.shots[x.from]._scene && r.shots[x.from]._scene !== r.shots[x.from - 1]._scene) ||
+       u.some(x => x.hard), '切點落在換場（或明確標記硬切）', '');
+    ok(u[u.length - 1].to === r.shots.length - 1, '單元涵蓋到最後一鏡', '');
+  })();
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();

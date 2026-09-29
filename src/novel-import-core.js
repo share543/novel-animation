@@ -3177,6 +3177,54 @@ function stripCredits(sents) {
   return out.slice(a, b);
 }
 
+/* 單元切分：目標 10–15 分鐘一個單元，切點要落在**場景轉換**處。
+   為什麼不能用 ceil(總長 / 15)：那會在場景中間切斷，一集在別人的對話中途結束。
+   換場是天然的段落（觀眾本來就在換場時重新定位），所以：
+   ① 先吃到最低時長 ② 往下找最近的換場點 ③ 超過上限還沒換場就往回找；
+   ④ 真的找不到換場才硬切，並標記 hard。 */
+function planUnits(shots, opt) {
+  const minSec = (opt && opt.unitMin) || 600;   /* 10 分鐘 */
+  const maxSec = (opt && opt.unitMax) || 900;   /* 15 分鐘 */
+  const n = shots.length;
+  if (!n) return [];
+  const pre = [0];
+  for (let i = 0; i < n; i++) pre.push(pre[i] + num(shots[i].dur, 0));
+  const isChange = function (i) {
+    return i > 0 && i < n && shots[i]._scene && shots[i]._scene !== shots[i - 1]._scene;
+  };
+  const units = [];
+  let s = 0, guard = 0;
+  while (s < n && guard++ < 999) {
+    let best = -1, fallback = -1, over = -1;
+    for (let k = s + 1; k <= n; k++) {
+      const d = pre[k] - pre[s];
+      if (k === n) { if (over < 0) over = n; break; }
+      /* ① 合格：達到最低時長且正好換場 */
+      if (d >= minSec && isChange(k)) { best = k; break; }
+      /* ② 超過上限後遇到的第一個換場點（寧可長一點也不要切在場景中間） */
+      if (isChange(k) && d > maxSec) { fallback = k; break; }
+      /* ③ 完全沒有換場可用的硬切點 */
+      if (d > maxSec) { over = k; break; }
+    }
+    const cut = best > 0 ? best : (fallback > 0 ? fallback : (over > 0 ? over : n));
+    const dur = Math.round((pre[cut] - pre[s]) * 10) / 10;
+    units.push({ from: s, to: cut - 1, dur: dur, hard: !(best > 0 || fallback > 0) && cut !== n });
+    s = cut;
+  }
+  /* 尾巴碎片併回前一個單元：實測合成測資切出「902 秒 + 8 秒」兩個單元，
+     8 秒不能算一集。門檻取 5 分鐘（比它短就不是單元，是碎片）。 */
+  if (units.length >= 2) {
+    const last = units[units.length - 1];
+    if (last.dur < 300) {
+      const prev = units[units.length - 2];
+      prev.to = last.to;
+      prev.dur = Math.round((prev.dur + last.dur) * 10) / 10;
+      units.pop();
+    }
+  }
+  return units;
+}
+
 /* 主分析：文字 → { persons, places, shots, stats } */
 function analyzeNovel(rawText, opt) {
   const text = normalizeNovel(rawText);
@@ -3292,6 +3340,8 @@ function analyzeNovel(rawText, opt) {
 
   const totalChars = shots.reduce((a, s) => a + s._chars, 0);
   const totalDur = shots.reduce((a, s) => a + s.dur, 0);
+  /* 單元切分要和鏡頭一起算完，介面與匯出才會一致 */
+  const unitPlans = planUnits(shots, opt);
   return {
     persons: persons.map(function (p, i) {
       p.descDraft = draftPersonDesc(p, text, narrator, genders, era,
@@ -3304,7 +3354,8 @@ function analyzeNovel(rawText, opt) {
     stats: {
       chars: text.length, shots: shots.length, totalChars,
       totalDur, charsPerMin: wpm,
-      units: Math.max(1, Math.ceil(totalDur / 900)),
+      units: Math.max(1, unitPlans.length),
+      unitPlans: unitPlans,
       minutes: Math.round(totalDur / 60 * 10) / 10
     }
   };

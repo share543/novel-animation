@@ -43,7 +43,7 @@ const tc = i => { let t = 0; for (let k = 0; k < i; k++) t += num(S.shots[k].dur
 let md = `# ${title} — 分鏡表\n\n`;
 md += `| 項目 | 值 |\n|---|---|\n`;
 md += `| 小說字數 | ${han} 漢字 |\n| 鏡頭數 | ${S.shots.length} |\n| 預估總長 | ${mm} |\n`;
-md += `| 15 分鐘單元 | ${Math.max(1, Math.ceil(totalDur / 900))} |\n| 節奏 | 260 字／分，每鏡上限 ${sec} 秒 |\n| 建議畫風 | ${r.styleName} |\n`;
+md += `| 單元數 | ${r.stats.units}（10–15 分鐘一單元，切點落在換場） |\n| 節奏 | 260 字／分，每鏡上限 ${sec} 秒 |\n`;
 md += `| 年代／季節 | ${detectEra(raw)}／${r.places[0] ? (r.places[0].descDraft || '').split('；').pop() : ''} |\n\n`;
 
 md += `## ① 人物（${S.chars.length}）— 鎖臉用，整部片要一致\n\n`;
@@ -55,12 +55,38 @@ md += `| 場景 | 類型 | 出現次數 | 描述字串 |\n|---|---|---|---|\n`;
 r.places.forEach(p => { md += `| ${p.name} | ${p.type} | ${p.count} | ${p.descDraft || ''} |\n`; });
 
 md += `\n## ④ 畫風基底\n\n${S.style}\n\n`;
-md += `## ③ 分鏡表（${S.shots.length} 鏡）\n\n`;
-md += `| # | 時間碼 | 景別 | 運鏡 | 秒 | 角色 | 場景 | 字幕（旁白） | 鏡頭描述 |\n|---|---|---|---|---|---|---|---|---|\n`;
+/* 單元切分（與 analyzeNovel 的 stats 同一個來源） */
+const plans = r.stats.unitPlans || [];
+const unitOf = [];
+plans.forEach((u, ui) => { for (let k = u.from; k <= u.to; k++) unitOf[k] = ui + 1; });
+
+md += `\n## ③ 分鏡表（${S.shots.length} 鏡／${plans.length} 個單元）\n\n`;
+if (plans.length) {
+  md += `### 單元切分（切點落在換場，不在場景中間斷）\n\n`;
+  md += `| 單元 | 時間碼 | 時長 | 分鐘 | 鏡數 | 字數 | 起始場景 | 結束場景 | 切點 |\n|---|---|---|---|---|---|---|---|---|\n`;
+  plans.forEach((u, ui) => {
+    const a = S.shots[u.from], b = S.shots[u.to];
+    const ca = charById(a.charId), cb = charById(b.charId);
+    const sa = sceneById(a.sceneId), sb = sceneById(b.sceneId);
+    const chars = S.shots.slice(u.from, u.to + 1).reduce((x, s) => x + (s.narr || '').replace(/\s/g, '').length, 0);
+    const m = Math.floor(u.dur / 60), sec2 = String(Math.round(u.dur % 60)).padStart(2, '0');
+    md += `| U${ui + 1} | ${tc(u.from)}–${tc(u.to + 1)} | ${u.dur}s | ${m}:${sec2} | ${u.to - u.from + 1} | ${chars} | ` +
+      `${sa ? sa.name : '—'}${ca ? '（' + ca.name + '）' : ''} | ${sb ? sb.name : '—'}${cb ? '（' + cb.name + '）' : ''} | ${u.hard ? '⚠️ 無換場可用，硬切' : '換場'}` +
+      `${(!u.hard && u.dur < 600) ? ' ⚠️ 短於 10 分鐘（收尾段，可與前後單元合併）' : ''} |\n`;
+  });
+  const short = plans.filter(u => u.dur < 600 && plans.length === 1);
+  if (short.length) {
+    md += `\n> ⚠️ 全篇 ${Math.round(plans[0].dur / 60)} 分鐘，不足一個 10–15 分鐘單元。` +
+      `旁白 260 字／分推算，一個單元約 2,600–3,900 字 —— 可以和同系列其他短篇併成一集。\n`;
+  }
+  md += `\n`;
+}
+
+md += `| 單元 | # | 時間碼 | 景別 | 運鏡 | 秒 | 角色 | 場景 | 字幕（旁白） | 鏡頭描述 |\n|---|---|---|---|---|---|---|---|---|---|\n`;
 S.shots.forEach((s, i) => {
   const c = charById(s.charId), sc = sceneById(s.sceneId);
   const narr = (s.narr || '').replace(/\|/g, '｜').replace(/\n/g, ' ');
-  md += `| ${s.id} | ${tc(i)} | ${s.size} | ${s.move} | ${s.dur} | ${c ? c.name : '—'} | ${sc ? sc.name : '—'} | ${narr} | ${s.lens} |\n`;
+  md += `| U${unitOf[i] || 1} | ${s.id} | ${tc(i)} | ${s.size} | ${s.move} | ${s.dur} | ${c ? c.name : '—'} | ${sc ? sc.name : '—'} | ${narr} | ${s.lens} |\n`;
 });
 
 md += `\n## 完整 prompt（每鏡可直接貼進即夢）\n\n`;
