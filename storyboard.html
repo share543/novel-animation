@@ -233,6 +233,13 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
   </div>
   <div id="charList"></div>
   <button class="btn p" onclick="addChar()">＋ 新增角色</button>
+  <button class="btn" onclick="exportCast()">匯出角色卡</button>
+  <button class="btn" onclick="document.getElementById('castFile').click()">匯入角色卡</button>
+  <input type="file" id="castFile" accept=".json" style="display:none" onchange="importCast(this)">
+  <div style="color:var(--dim);font-size:.82rem;margin-top:7px">
+    角色卡以<b>名字</b>為鍵：匯入新分段時同名角色會沿用原本的造型（不再重算，避免同一角色在不同分段變成不同的臉）。
+    匯出的 <code>cast-lib.json</code> 可以匯進另一個專案，共用同一批角色設定。
+  </div>
 </div>
 
 <!-- ═══ 場景 ═══ -->
@@ -259,6 +266,11 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
     <button class="btn" onclick="renumber()">重新編號</button>
     <button class="btn" onclick="autoDuration()">依旁白字數估算時長</button>
     <button class="btn" onclick="promptView()">檢視全部 prompt</button>
+  </div>
+  <div id="unitBar" style="display:none;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <label style="color:var(--dim);font-size:.88rem">分段（匯入的原稿）：</label>
+    <select id="shotUnit" onchange="renderShots()" style="max-width:280px"></select>
+    <span id="unitInfo" style="color:var(--dim);font-size:.82rem"></span>
   </div>
   <div class="tblwrap"><table id="shotTbl"></table></div>
 </div>
@@ -447,7 +459,39 @@ function renderScenes(){
     </div>`).join('') : '<div class="empty">尚無場景。點下方按鈕新增。</div>';
 }
 
+/* ── 分段：每次匯入一份原稿就是一段。舊段不會被覆蓋，
+   表格只顯示目前選取的那一段，時間碼從該段開頭起算。 ── */
+function unitList(){
+  const seen=[], out=[];
+  S.shots.forEach(s=>{ const u=s.unit||''; if(seen.indexOf(u)<0){ seen.push(u); out.push(u); } });
+  return out;
+}
+function curUnit(){
+  const us=unitList(); if(!us.length) return '';
+  const v=($('#shotUnit')&&$('#shotUnit').value)||'';
+  if(us.length<=1) return us[0];
+  return us.indexOf(v)>=0 ? v : us[0];
+}
+function renderUnitBar(){
+  const bar=$('#shotUnit'), wrap=$('#unitBar'); if(!bar||!wrap) return;
+  const us=unitList();
+  wrap.style.display = us.length>1 ? 'flex' : 'none';
+  const cur=curUnit();
+  bar.innerHTML=us.map(u=>{
+    const n=S.shots.filter(s=>(s.unit||'')===u).length;
+    return `<option value="${esc(u)}"${u===cur?' selected':''}>${esc(u||'（未分段）')}｜${n} 鏡</option>`;
+  }).join('');
+  const info=$('#unitInfo');
+  if(info) info.textContent = us.length>1 ? ('共 '+us.length+' 段／'+S.shots.length+' 鏡') : '';
+}
+
 function renderShots(){
+  renderUnitBar();
+  const cur=curUnit();
+  const rows=S.shots.map((s,i)=>({s:s,i:i})).filter(x=>!cur || (x.s.unit||'')===cur);
+  /* 時間碼依「這一段」累加，不是整個專案 */
+  let acc=0; const tcmap={};
+  rows.forEach(x=>{ tcmap[x.i]=mmss(acc); acc+=num(x.s.dur,3); });
   const chOpt = id => `<option value="">（無）</option>` +
     S.chars.map(c=>`<option value="${c.id}"${id===c.id?' selected':''}>${esc(c.name)}</option>`).join('');
   const scOpt = id => `<option value="">（無）</option>` +
@@ -459,10 +503,10 @@ function renderShots(){
       <th style="width:92px">景別</th><th style="width:92px">運鏡</th><th style="width:64px">秒</th>
       <th style="width:110px">角色</th><th style="width:110px">場景</th>
       <th style="min-width:220px">③ 鏡頭描述</th><th style="width:66px">狀態</th><th style="width:40px"></th>
-    </tr></thead><tbody>${S.shots.map((s,i)=>`
+    </tr></thead><tbody>${rows.map(x=>{ const s=x.s,i=x.i; return `
       <tr>
         <td class="sid">${s.id}</td>
-        <td style="color:var(--dim);font-family:ui-monospace,monospace">${timecode(i)}</td>
+        <td style="color:var(--dim);font-family:ui-monospace,monospace">${tcmap[i]||'0:00'}</td>
         <td><textarea oninput="upd('${i}','narr',this.value)">${esc(s.narr)}</textarea></td>
         <td><select onchange="upd('${i}','size',this.value)">${Object.keys(SIZES).map(k=>
             `<option${s.size===k?' selected':''}>${k}</option>`).join('')}</select></td>
@@ -476,7 +520,7 @@ function renderShots(){
         <td><select onchange="upd('${i}','st',this.value)">
           ${['✅','🔄','❌'].map(x=>`<option${s.st===x?' selected':''}>${x}</option>`).join('')}</select></td>
         <td><button class="btn s d" onclick="delShot(${i})">✕</button></td>
-      </tr>`).join('')}</tbody>`;
+      </tr>`; }).join('')}</tbody>`;
 }
 
 function renderSizes(){
@@ -505,7 +549,8 @@ function delScene(id){
   S.shots.forEach(s=>{ if(s.sceneId===id)s.sceneId=''; }); renderScenes(); renderShots(); renderAll();
 }
 function addShot(){
-  S.shots.push({id:'S'+String(S.shots.length+1).padStart(3,'0'),narr:'',size:'中景',move:'固定',
+  /* 手動新增的鏡頭歸到目前選取的分段，不然它會消失在分段篩選之外 */
+  S.shots.push({id:'S'+String(S.shots.length+1).padStart(3,'0'),unit:curUnit(),narr:'',size:'中景',move:'固定',
     dur:4,charId:S.chars[0]?.id||'',sceneId:S.scenes[0]?.id||'',lens:'',st:'🔄'});
   renderShots(); renderAll();
 }
@@ -2520,36 +2565,127 @@ function renderNovelReport(r) {
   $('#nf-report').innerHTML = html;
 }
 
+/* ═══════════ 角色卡（跨分段、跨專案沿用同一批造型） ═══════════
+   造型一旦定了就不要再讓工具重算：重算會讓同一個角色在不同分段變成不同的臉，
+   而「鎖臉」正是整套流程的目的。所以角色以**名字**為鍵，同名一律沿用原卡。 */
+function findByName(list, name) {
+  for (const x of list) if (x.name === name) return x;
+  return null;
+}
+
+function castCards() {
+  return S.chars.map(function (c) {
+    return { name: c.name, role: c.role || '', desc: c.desc || '',
+      ref: c.ref || '', face: c.face, body: c.body };
+  });
+}
+
+/* 匯出角色卡：可以匯進另一個專案（同一個作者、同一個推理宇宙共用一批演員） */
+function exportCast() {
+  if (!S.chars.length) { alert('目前沒有角色可以匯出。'); return; }
+  dl('cast-lib.json', JSON.stringify({
+    type: 'cast-lib', version: 1,
+    title: (S.meta && S.meta.title) || '',
+    exported: new Date().toISOString().slice(0, 10),
+    chars: castCards()
+  }, null, 2), 'application/json');
+}
+
+function importCast(input) {
+  const f = input.files && input.files[0];
+  input.value = '';
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onerror = function () { alert('讀取角色卡失敗。'); };
+  rd.onload = function () {
+    let lib;
+    try { lib = JSON.parse(rd.result); }
+    catch (e) { alert('這個檔案不是角色卡（JSON 解析失敗）。'); return; }
+    const cards = (lib && lib.chars) || (Array.isArray(lib) ? lib : null);
+    if (!cards || !cards.length) { alert('角色卡裡沒有資料。'); return; }
+    let upd = 0, add = 0;
+    cards.forEach(function (card) {
+      if (!card || !card.name) return;
+      const old = findByName(S.chars, card.name);
+      if (old) {
+        /* 角色卡優先：卡上寫的造型就是要沿用的造型（含參考圖與強度） */
+        old.role = card.role || old.role;
+        old.desc = card.desc || old.desc;
+        old.ref = card.ref || old.ref;
+        if (card.face != null) old.face = card.face;
+        if (card.body != null) old.body = card.body;
+        upd++;
+      } else {
+        S.chars.push({ id: uid('c'), name: card.name, role: card.role || '', desc: card.desc || '',
+          ref: card.ref || '', face: card.face != null ? card.face : .85,
+          body: card.body != null ? card.body : .5 });
+        add++;
+      }
+    });
+    renderChars(); renderShots(); renderAll(); save();
+    alert('角色卡匯入完成：沿用／更新 ' + upd + ' 個，新增 ' + add + ' 個。');
+  };
+  rd.readAsText(f, 'utf-8');
+}
+
+/* 分段名稱：用原始檔名（去掉 doc_<hash>_ 前綴與副檔名），方便對照是哪一份原稿 */
+function unitLabelOf(r) {
+  let n = (r.sourceName || '').replace(/^doc_[0-9a-f]{6,}_/i, '').replace(/_(OCR|ocr)$/, '');
+  n = n.trim();
+  if (!n) n = '原稿' + (unitList().length + 1);
+  return n;
+}
+
 function applyNovel() {
   if (!novelRes) return;
   const r = novelRes;
-  const has = S.chars.length || S.scenes.length || S.shots.length;
-  if (has && !confirm('套用會覆蓋目前的人物、場景與鏡頭表。建議先按「備份」下載目前的專案。繼續？')) return;
-  const cid = {}, sid = {};
-  S.chars = r.persons.map(p => {
-    const id = uid('c'); cid[p.name] = id;
-    /* 描述草稿直接填進去（能從文字推的推好，長相留「待補」欄位），
-       使用者只要補長相，不用從空白開始寫。 */
-    return { id: id, name: p.name, role: p.role || '', desc: p.descDraft || '', ref: '', face: .85, body: .5 };
+  const label = unitLabelOf(r);
+  const oldShots = S.shots.filter(function (s) { return (s.unit || '') === label; });
+  if (oldShots.length && !confirm('分段「' + label + '」已經存在（' + oldShots.length +
+    ' 個鏡頭，可能含你的手動修改）。\n\n要以這次的分析結果取代它嗎？\n' +
+    '（同名角色仍會沿用原本的造型；其他分段完全不受影響）')) return;
+
+  const cid = {}, sid = {}, added = [];
+
+  /* ①人物：同名沿用角色卡，只對新角色產生建議 */
+  r.persons.forEach(function (p) {
+    const old = findByName(S.chars, p.name);
+    if (old) { cid[p.name] = old.id; return; }
+    const c = { id: uid('c'), name: p.name, role: p.role || '', desc: p.descDraft || '',
+      ref: '', face: .85, body: .5 };
+    S.chars.push(c); cid[p.name] = c.id; added.push(p.name);
   });
-  S.scenes = r.places.map(p => {
-    const id = uid('s'); sid[p.name] = id;
-    return { id: id, name: p.name, type: p.type, desc: p.descDraft || '', ref: '', body: .65 };
+
+  /* ②場景：同名沿用 */
+  r.places.forEach(function (p) {
+    const old = findByName(S.scenes, p.name);
+    if (old) { sid[p.name] = old.id; return; }
+    const s = { id: uid('s'), name: p.name, type: p.type, desc: p.descDraft || '', ref: '', body: .65 };
+    S.scenes.push(s); sid[p.name] = s.id;
   });
-  S.shots = r.shots.map((x, i) => ({
-    id: 'S' + String(i + 1).padStart(3, '0'),
-    narr: x.narr, size: x.size, move: x.move, dur: x.dur,
-    charId: cid[x._who] || '', sceneId: sid[x._scene] || '',
-    lens: x.lens, st: '🔄'
-  }));
-  S.style = STYLE_PRESETS[r.styleName] || DEF_STYLE;
+
+  /* ③鏡頭：只換掉同名分段的鏡頭，其他分段原封不動 */
+  const keep = S.shots.filter(function (s) { return (s.unit || '') !== label; });
+  const fresh = r.shots.map(function (x) {
+    return { unit: label, narr: x.narr, size: x.size, move: x.move, dur: x.dur,
+      charId: cid[x._who] || '', sceneId: sid[x._scene] || '', lens: x.lens, st: '🔄' };
+  });
+  S.shots = keep.concat(fresh);
+  S.shots.forEach(function (s, i) { s.id = 'S' + String(i + 1).padStart(3, '0'); });
+
+  /* 畫風只在第一段決定 —— 續接的分段要沿用同一個風格，不然整部片會花掉 */
+  if (!keep.length) S.style = STYLE_PRESETS[r.styleName] || DEF_STYLE;
   if (S.meta.title === '我的小說動畫計畫' && r.sourceName) S.meta.title = r.sourceName;
+
   syncForm(); renderAll(); renderChars(); renderScenes(); renderSizes();
   save();
   const t = document.querySelector('nav.tabs button[data-p="shot"]');
   if (t) t.click();
-  nfMsg('已套用：<b>' + S.chars.length + '</b> 個人物、<b>' + S.scenes.length + '</b> 個場景、' +
-    '<b>' + S.shots.length + '</b> 個鏡頭。已跳到③鏡頭表。');
+  nfMsg('已套用分段「<b>' + esc(label) + '</b>」：<b>' + fresh.length + '</b> 個鏡頭。' +
+    '專案目前共 <b>' + unitList().length + '</b> 段／<b>' + S.shots.length + '</b> 鏡、<b>' +
+    S.chars.length + '</b> 個角色' +
+    (added.length ? '（新增角色：<b>' + esc(added.join('、')) + '</b>）' : '（角色全部沿用原有造型）') +
+    '。已跳到③鏡頭表。');
 }
 
 /* ═══════════ tabs ═══════════ */
