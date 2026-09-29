@@ -8,9 +8,9 @@
 
 ## 硬性約束（不可違反）
 
-`report.html` 必須永遠滿足：
+`storyboard.html` 必須永遠滿足：
 
-1. **單一檔案** — HTML + CSS + JS 全部內嵌，檔名固定 `report.html`
+1. **單一檔案** — HTML + CSS + JS 全部內嵌，檔名固定 `storyboard.html`
 2. **零外部資源** — 不得有 `<script src>`、`<link>`、`@import`、CDN、遠端字型、遠端圖片
 3. **零網路請求** — 不得有 `fetch`、`XMLHttpRequest`、`WebSocket`、`importScripts`
 4. **零框架** — 不得引入 React／Vue／jQuery，只用原生 Web API
@@ -22,16 +22,16 @@
 
 ```bash
 # 依賴稽核（應全為 0）
-grep -c 'https\?://'     report.html
-grep -c '<link'          report.html
-grep -c '@import'        report.html
-grep -c 'fetch('         report.html
-grep -c 'XMLHttpRequest' report.html
-grep -c 'type="module"'  report.html
-grep -c '<script'        report.html   # 應為 1
+grep -c 'https\?://'     storyboard.html
+grep -c '<link'          storyboard.html
+grep -c '@import'        storyboard.html
+grep -c 'fetch('         storyboard.html
+grep -c 'XMLHttpRequest' storyboard.html
+grep -c 'type="module"'  storyboard.html
+grep -c '<script'        storyboard.html   # 應為 1
 
 # CSS url() 專用（排除 URL.createObjectURL 的誤報）
-grep -oP '(?<![A-Za-z])url\(' report.html | wc -l   # 應為 0
+grep -oP '(?<![A-Za-z])url\(' storyboard.html | wc -l   # 應為 0
 ```
 
 > `grep -i 'url('` 會把 `URL.createObjectURL` 誤判成 CSS `url()`。用上面的 lookbehind 排除。
@@ -94,10 +94,10 @@ S = {
 
 ## 文件同步
 
-`docs/*.md` 是 `report.html` 內建結構的紙本版。改動資料結構時，
+`docs/*.md` 是 `storyboard.html` 內建結構的紙本版。改動資料結構時，
 必須同步更新 `docs/01`–`docs/06` 與 `examples/demo-project.json`。
 
-`examples/demo-project.json` 的 `style` / `neg` 必須與 `report.html` 中的
+`examples/demo-project.json` 的 `style` / `neg` 必須與 `storyboard.html` 中的
 `DEF_STYLE` / `DEF_NEG` 完全一致。
 
 ## Git 慣例

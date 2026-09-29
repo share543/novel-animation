@@ -1,12 +1,12 @@
 # 小說動畫工作台
 
-把自寫小說轉成 AI 動畫影片的工作流工具。**單檔、零依賴、完全離線** —— 雙擊 `report.html` 就能用。
+把自寫小說轉成 AI 動畫影片的工作流工具。**單檔、零依賴、完全離線** —— 雙擊 `storyboard.html` 就能用。
 
 核心是一件事：**讓 AI 生成的畫面跨鏡頭保持一致**。
 
 ## 線上使用
 
-GitHub Pages：<https://share543.github.io/novel-animation/report.html>
+GitHub Pages：<https://share543.github.io/novel-animation/storyboard.html>
 
 ## 為什麼需要這個工具
 
@@ -30,9 +30,9 @@ GitHub Pages：<https://share543.github.io/novel-animation/report.html>
 
 ## 特色
 
-- **單一檔案**：HTML + CSS + JS 全部內嵌在 `report.html`，無任何外部資源。
+- **單一檔案**：HTML + CSS + JS 全部內嵌在 `storyboard.html`，無任何外部資源。
 - **完全離線**：不使用 CDN、不引入任何 JS 框架，全部原生 Web API。
-- **本機開啟即用**：直接雙擊 `report.html`（`file://`）即可，不需安裝或架設伺服器。
+- **本機開啟即用**：直接雙擊 `storyboard.html`（`file://`）即可，不需安裝或架設伺服器。
 - **零依賴**：37KB 純文字，`<script>` 與 `<style>` 各一個，沒有 `fetch`／`XMLHttpRequest`。
 - **四段式 prompt 自動組裝**：改設定檔一次，全部鏡頭同步更新。
 - **參考強度自動推算**：依景別自動建議臉部／主體參考強度，不用查表。
@@ -44,7 +44,7 @@ GitHub Pages：<https://share543.github.io/novel-animation/report.html>
 
 ## 使用方式
 
-1. 下載 `report.html`，用瀏覽器開啟（或直接用 Pages 線上版）。
+1. 下載 `storyboard.html`，用瀏覽器開啟（或直接用 Pages 線上版）。
 2. 點「**載入範例**」先看一遍流程。
 3. 切到「**① 人物**」新增角色，寫**固定描述字串**（50–80 字：性別年齡＋髮型＋臉部特徵＋固定服裝＋一個辨識記憶點）。用這串描述去生成參考圖，挑一張滿意的放大下載。
 4. 切到「**② 場景**」新增場景（偵探小說通常只有 3–6 個），同樣生成參考圖。
@@ -149,12 +149,12 @@ const get = k => { try{ return localStorage.getItem(k) || MEM; }
 
 ```bash
 # 應全部為 0
-grep -c 'https\?://'          report.html
-grep -c '<link'               report.html
-grep -c '@import'             report.html
-grep -c 'fetch('              report.html
-grep -c 'XMLHttpRequest'      report.html
-grep -c 'type="module"'       report.html
+grep -c 'https\?://'          storyboard.html
+grep -c '<link'               storyboard.html
+grep -c '@import'             storyboard.html
+grep -c 'fetch('              storyboard.html
+grep -c 'XMLHttpRequest'      storyboard.html
+grep -c 'type="module"'       storyboard.html
 ```
 
 注意：`grep -i 'url('` 會把 `URL.createObjectURL` 誤判成 CSS `url()`，需用

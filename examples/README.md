@@ -7,10 +7,10 @@
 ### 怎麼用
 
 **方式一：工具內建（最快）**
-開啟 `report.html`，點右上角「**載入範例**」。
+開啟 `storyboard.html`，點右上角「**載入範例**」。
 
 **方式二：匯入這個檔案**
-1. 開啟 `report.html`
+1. 開啟 `storyboard.html`
 2. 點右上角「**匯入**」
 3. 選擇 `demo-project.json`
 
