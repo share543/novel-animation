@@ -742,9 +742,13 @@ const STYLE_PRESETS = {
 };
 const GENRE_RULES = [
   [/賽博|義體|晶片|人工智慧|機器人|霓虹|全息/, '賽博龐克'],
-  [/校園|高中|社團|青春|學姊|學長|畢業/, '日系動畫'],
-  [/偵探|推理|命案|兇手|線索|證據|密室|不在場證明|驗屍/, '黑色電影'],
-  [/黑幫|走私|子彈|幫派|交易|老大/, '黑色電影']
+  /* 「高中」「畢業」這種生活事件不是題材訊號，一句「我讀完高中」會蓋掉整篇推理，
+     改成真正的校園題材詞。 */
+  [/校園|社團|學姊|學長|教室|制服|青春|轉學生|高中生活|同班同學/, '日系動畫'],
+  /* 異體字都要收：台灣標準字是「凶手」「凶殺」，中國大陸是「兇手」「兇殺」。
+     原本只寫「兇手」，台灣作品一篇都命中不了。 */
+  [/偵探|推理|命案|凶[手殺]|兇[手殺]|懸案|線索|證據|密室|不在場證明|驗屍|屍體|血跡|探長|偵辦|目擊|凶器|兇器/, '黑色電影'],
+  [/黑幫|走私|子彈|幫派|交易|老大|角頭/, '黑色電影']
 ];
 
 /* 職稱：偵探小說常用「偵探說」「警官問」，這些也能當角色。 */
@@ -1218,8 +1222,16 @@ function analyzeNovel(rawText, opt) {
 /* 依偵測到的題材挑畫風；沒有強烈訊號就用寫實電影感（DEF_STYLE）。 */
 function guessStyle(text, chosen) {
   if (chosen && STYLE_PRESETS[chosen]) return chosen;
-  for (const [re, name] of GENRE_RULES) if (re.test(text)) return name;
-  return '寫實電影感';
+  /* 比「命中次數」，不是比規則順序。原本誰先命中就贏，導致一句「我讀完高中」
+     就能把復仇推理片判成日系動畫。 */
+  const score = new Map();
+  for (const [re, name] of GENRE_RULES) {
+    const m = text.match(new RegExp(re.source, 'g'));
+    if (m) score.set(name, (score.get(name) || 0) + m.length);
+  }
+  let best = '', bestN = 0;
+  for (const [name, c] of score) if (c > bestN) { bestN = c; best = name; }
+  return best || '寫實電影感';
 }
 
 /* ═══════════ PDF 文字抽取（純原生，無任何函式庫）═══════════
