@@ -1542,7 +1542,10 @@ function draftPersonDesc(p, text, narrator, genders, era, styleName, rank, taken
   };
   const look = suggestLook(p, text, { era: era, gender: g, outfitPick: outfitPick, rank: rank, taken: taken });
 
-  const head = [g === 'f' ? '女性' : (g === 'm' ? '男性' : '人物')];
+  /* 性別判不出來就整格省略 —— 「人物」這兩個字進了 prompt 只是雜訊 */
+  const head = [];
+  if (g === 'f') head.push('女性');
+  else if (g === 'm') head.push('男性');
   if (age) head.push(age);
   if (p.role) head.push(p.role);
   else if (job) head.push(job);

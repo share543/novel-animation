@@ -340,6 +340,7 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   /* 造型建議：髮型／臉型／服裝／辨識記憶點四格都要有具體內容，
      不能留「待補」——那串括號會被當成 prompt 第①段送出去。 */
   ok(father && father.descDraft.length >= 30, '描述草稿有實質內容（非空泛）', father && father.descDraft);
+  ok(rj.persons.every(p => !/^人物|；人物/.test(p.descDraft)), '性別判不出時不寫「人物」進 prompt（避免雜訊）', '');
   ok(father && !/待補/.test(father.descDraft), '不再有「待補」字樣（會污染 prompt）', father && father.descDraft);
   ok(father && /，/.test(father.descDraft), '描述草稿含造型描述（髮型＋臉型）', '');
   const looks = rj.persons.map(p => p.descDraft.split('；').slice(1).join('；'));
