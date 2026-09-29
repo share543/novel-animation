@@ -704,7 +704,7 @@ const FAMILY_WORDS = new Set([
   '房客'
 ]);
 
-/* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「鄭木貴探長」） */
+/* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「林啟明探長」） */
 const NAME_TITLES = [
   '所長',
   '局長',
@@ -782,7 +782,7 @@ const NAME_TITLES = [
   '船長'
 ];
 
-/* 名字後面必須不是中文字，才算名字到此為止（「鄭木貴，」✓／「鄭木貴探」✗） */
+/* 名字後面必須不是中文字，才算名字到此為止（「林啟明，」✓／「林啟明探」✗） */
 function tailOK(ch) { return !ch || !/[\u4e00-\u9fff]/.test(ch); }
 
 /* 地點詞庫：命中即視為場景。涵蓋現代與古代（公案／武俠）題材。 */
@@ -887,10 +887,10 @@ const SPEAK_VERBS = ['說著', '問著', '答著', '說道', '問道', '答道',
 const MOVE_VERBS = ['走進', '走出', '回到', '站在', '坐下', '起身', '轉身', '低頭', '抬頭',
   '伸手', '拿起', '放下', '走向', '跑向', '推開', '打開'];
 
-/* 名字與動詞之間夾副詞的寫法：「正祥安慰地說著」「銘山一走進客廳」。
-   台灣短篇大量使用「不帶姓的名字」（正祥／銘山／英姐），但這些名字不符合
+/* 名字與動詞之間夾副詞的寫法：「名字＋副詞＋動詞」如「阿明安慰地說著」。
+   台灣短篇大量使用「不帶姓的名字」（阿明／德山／春姐），但這些名字不符合
    姓氏規則，只有靠「對白動詞前的位置」才抓得到 —— 中間夾了副詞就整個漏掉
-   （實測《黑寡婦》主角 3 人全缺）。 */
+   （實測一篇 9 千字短篇的主角 3 人全缺）。 */
 const ADV_TAIL = /(?:[\u4e00-\u9fff]{1,3}地|[\u4e00-\u9fff]{1,2}著|[一就便])$/;
 /* 這些詞長得像名字但其實是副詞／狀態詞，不能當人名。 */
 const ADV_ISH = new Set(['安慰', '隨手', '順手', '順便', '大聲', '高聲', '低聲', '輕聲', '連忙', '趕緊', '急忙',
@@ -903,7 +903,7 @@ const KIN_TAIL = '姐哥嫂叔伯嬸婆妹弟公仔爺娘太';
    放寬判定時用那種邊界會把「向他說道」的「向他」當成人名）。 */
 const HARD_BOUND = new Set(('，。！？：；、,.!?:;」』】）)…—「『【（( \n\t\r　').split(''));
 
-/* 放寬判定的守門員：台灣短篇常寫「不帶姓的名字」（正祥／銘山／英姐），
+/* 放寬判定的守門員：台灣短篇常寫「不帶姓的名字」（阿明／德山／春姐），
    姓氏規則抓不到，但它們幾乎都出現在「標點後面 + 對白動詞前」這個位置。
    代名詞、數詞、疑問詞一律排除，避免「向他說道」「兩人說道」被當成人名。 */
 const NAME_BAD_CHAR = new Set(('他她它我你您其們誰何什怎幾兩三四五六七八九十百千').split(''));
@@ -955,13 +955,13 @@ function extractPersons(text, limit) {
         if (!boundaryOK(start > 0 ? text[start - 1] : '')) break;
         if (looksLikeName(cand)) { bump(cand); break; }
         /* 放寬：緊接在標點後面、又掛在對白動詞前，就是很強的人名證據
-           （「，正祥說道」）——姓氏規則抓不到不帶姓的名字。 */
+           （「，阿明說道」）——姓氏規則抓不到不帶姓的名字。 */
         if (len <= 3 && canBeBareName(cand)
           && (start === 0 || HARD_BOUND.has(text[start - 1]))) { bump(cand); loose.add(cand); break; }
       }
     }
   }
-  /* ② 名字與動詞之間夾著副詞：「正祥安慰地說著」「銘山一走進客廳」
+  /* ② 名字與動詞之間夾著副詞：「名字＋副詞＋動詞」如「阿明安慰地說著」
      —— 不處理的話，「不帶姓的名字」寫法的作品主角會整個漏掉。
      副詞尾剝掉之後才找名字；剝不掉（沒有副詞）就交給 ① 的規則。 */
   for (const v of SPEAK_VERBS.concat(MOVE_VERBS)) {
@@ -979,7 +979,7 @@ function extractPersons(text, limit) {
         const st = start0 + cut.length - len;
         if (st > 0 && !boundaryOK(text[st - 1])) break;
         if (looksLikeName(cand)) { bump(cand); break; }
-        /* 寬鬆判定：「…地」句型（「正祥安慰地說著」）或標點開頭的名字 */
+        /* 寬鬆判定：「…地」句型（「阿明安慰地說著」）或標點開頭的名字 */
         if (len <= 3 && (isDi || st === 0 || HARD_BOUND.has(text[st - 1])) && canBeBareName(cand)) {
           bump(cand); loose.add(cand); break;
         }
@@ -1017,7 +1017,7 @@ function extractPersons(text, limit) {
     }
   }
 
-  /* 名字＋職稱：「鄭木貴探長」——偵探小說指名道姓最常見的寫法。 */
+  /* 名字＋職稱：「林啟明探長」——偵探小說指名道姓最常見的寫法。 */
   for (const t of NAME_TITLES) {
     let idx = -1;
     while ((idx = text.indexOf(t, idx + 1)) >= 0) {
@@ -1031,7 +1031,7 @@ function extractPersons(text, limit) {
       }
     }
   }
-  /* ③ 不帶姓的名字（「正祥」「銘山」「英姐」）：姓氏規則抓不到，
+  /* ③ 不帶姓的名字（「阿明」「德山」「春姐」）：姓氏規則抓不到，
      但它們會在句首反覆出現。統計「標點後開頭」的 2-3 字詞，出現夠多次
      就當名字 —— 連接詞／時間詞先擋掉（否則「於是」「忽然」會變人名）。 */
   const clause = new Map();
@@ -1048,7 +1048,7 @@ function extractPersons(text, limit) {
       break;
     }
   }
-  /* 短篇 3 次、長篇 8 次（9,118 字的《黑寡婦》主角「正祥」句首出現 20+ 次）。 */
+  /* 短篇 3 次、長篇 8 次（實測 9 千字短篇的主角在句首出現 20+ 次）。 */
   const clauseNeed = text.length < 3000 ? 3 : 8;
   for (const [n, c] of clause) {
     if (c >= clauseNeed) { cnt.set(n, Math.max(cnt.get(n) || 0, c)); loose.delete(n); }
@@ -1365,7 +1365,7 @@ function nameGender(name) {
 }
 
 /* 用代名詞反推性別：文中出現「他」時，往前找最近被點名的角色，那就是男性；
-   「她」同理是女性。角色詞以外的名字（鄭木貴、林小姐…）靠這條才判得出性別。 */
+   「她」同理是女性。角色詞以外的名字（林啟明、林小姐…）靠這條才判得出性別。 */
 function inferGenders(text, persons) {
   const g = {};
   persons.forEach(function (p) { const x = genderOf(p); if (x) g[p.name] = x; });

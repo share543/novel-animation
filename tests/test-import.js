@@ -257,11 +257,11 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   console.log('\n=== 11. 第一人稱小說的角色與場景 ===');
   /* 真實案例：《陰影裏的人》——全篇第一人稱、沒有「某某說道」，舊版一個角色都抓不到，
      且所有鏡頭都被套上「臥室」（該場景其實在中段才出現）。 */
-  const fp = '我叫鄭木貴。父親做生意，父親賠了錢，父親自殺了。母親哭著說，母親帶我長大，母親後來也走了。'
-    + '鄭木貴探長說：「這案子我來辦。」';
+  const fp = '我叫林啟明。父親做生意，父親賠了錢，父親自殺了。母親哭著說，母親帶我長大，母親後來也走了。'
+    + '林啟明探長說：「這案子我來辦。」';
   const rf = analyzeNovel(fp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
   const fnames = rf.persons.map(p => p.name);
-  ok(fnames.indexOf('鄭木貴') >= 0, '「我叫鄭木貴」這種自我介紹句抓到主角', fnames.join('／'));
+  ok(fnames.indexOf('林啟明') >= 0, '「我叫林啟明」這種自我介紹句抓到主角', fnames.join('／'));
   ok(fnames.indexOf('父親') >= 0, '「父親」出現 ≥3 次算一個角色', fnames.join('／'));
   ok(fnames.indexOf('母親') >= 0, '「母親」出現 ≥3 次算一個角色', fnames.join('／'));
   ok(rf.shots.some(s => s._who), '逐鏡角色含 role 型角色（原本被 !p.role 整個濾掉）');
@@ -299,13 +299,13 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(guessStyle('隨便一段文字', '黑色電影') === '黑色電影', '使用者指定畫風時以指定為準');
 
   console.log('\n=== 14. 判斷層：敘述者／代名詞／視覺描述 ===');
-  const jp = '我叫鄭木貴，我不是本地人。我望著窗外，心裡很慌亂。'
+  const jp = '我叫林啟明，我不是本地人。我望著窗外，心裡很慌亂。'
     + '父親走進屋裡，神情沮喪。母親抱著我放聲大哭。'
     + '父親的合夥人看起來忠厚老實，合夥人笑得很大聲。'
     + '有一次，母親先離開，留下他一個人在屋裡。\n';
   const rj = analyzeNovel(jp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
 
-  ok(rj.narrator && rj.narrator.name === '鄭木貴', '「我叫鄭木貴」認出第一人稱敘述者',
+  ok(rj.narrator && rj.narrator.name === '林啟明', '「我叫林啟明」認出第一人稱敘述者',
     JSON.stringify(rj.narrator));
   const narratorShots = rj.shots.filter(s => s._whoFrom === '我＝敘述者');
   ok(narratorShots.length > 0, '含「我」的鏡頭對應到敘述者（原本全空）', narratorShots.length + ' 鏡');
@@ -314,7 +314,7 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     '「父親的合夥人」的主體是合夥人，不是被修飾的父親',
     rj.shots.filter(s => /合夥人/.test(s.narr)).map(s => s._who + '←' + s.narr).join('｜'));
 
-  const woShots = rj.shots.filter(s => /我/.test(s.narr) && s._who === '鄭木貴');
+  const woShots = rj.shots.filter(s => /我/.test(s.narr) && s._who === '林啟明');
   ok(woShots.length > 0, '「我」＝敘述者的鏡頭有鎖到人', woShots.length + ' 鏡');
 
   /* 代名詞性別不符時寧可留空，不可硬套到錯的人身上 */
@@ -383,7 +383,7 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   const twice = analyzeNovel(jp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
   ok(JSON.stringify(twice.persons.map(p => p.descDraft)) === JSON.stringify(rj.persons.map(p => p.descDraft)),
     '同一份原稿重複分析，造型建議完全一致（可重現）', '');
-  const nb = rj.persons.find(p => p.name === '鄭木貴');
+  const nb = rj.persons.find(p => p.name === '林啟明');
   ok(nb && /第一人稱敘述者/.test(nb.descDraft), '敘述者被標記出來', nb && nb.descDraft);
   ok(rj.places.every(p => p.descDraft), '每個場景都有描述草稿',
     rj.places.map(p => p.name).join('／'));
@@ -434,8 +434,8 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(/仵作|繡娘|掌櫃|師爺/.test(rAnc.persons.map(p => p.name).join('/')),
     '古代職業詞（仵作／繡娘／掌櫃）有被抓到', '');
 
-  console.log('\n=== 17. 真實短篇（鄭探長探案）修好的五個坑 ===');
-  /* 這幾條規則是從真實短篇（推理雜誌 1985-1987 年的作品）跑出來的，
+  console.log('\n=== 17. 真實短篇修好的五個坑 ===');
+  /* 這幾條規則是從真實短篇（1980 年代台灣雜誌連載的短篇）跑出來的，
      但原作不可進公開 repo —— 這裡改寫成同構的自編測資：
      姓＋職業、職業被姓名包住、說著句型、著當名字前一字、稱謂性別、「是我…」句型。 */
   const real = '「小王，活兒來了，走吧！」放下聽筒，林刑警一口將茶喝光。\n'
@@ -489,13 +489,13 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   console.log('\n=== 20. 不帶姓的名字（台灣短篇常見寫法）===');
   (function () {
     const opt = { secPerShot: 4, maxChars: 8, maxScenes: 4, wpm: 260 };
-    /* 名字與對白動詞之間夾副詞：「正祥安慰地說著」；以及句首反覆出現的名字 */
-    const a = analyzeNovel('英姐端來一盤炸雞塊。正祥安慰地說著：「別急，錢再賺就有。」\n'
-      + '正祥走進室內，把門帶上。\n銘山一走進客廳，便聞到滿室香味。\n正祥坐下，點起菸。\n'
-      + '銘山抬起頭。\n正祥說道：「等我回來。」\n銘山說道：「好。」', opt);
+    /* 名字與對白動詞之間夾副詞：「明達安慰地說著」；以及句首反覆出現的名字 */
+    const a = analyzeNovel('春姐端來一盤炸雞塊。明達安慰地說著：「別急，錢再賺就有。」\n'
+      + '明達走進室內，把門帶上。\n德山一走進客廳，便聞到滿室香味。\n明達坐下，點起菸。\n'
+      + '德山抬起頭。\n明達說道：「等我回來。」\n德山說道：「好。」', opt);
     const nm = a.persons.map(p => p.name);
-    ok(nm.indexOf('正祥') >= 0, '夾副詞的名字（正祥安慰地說著）抓得到', nm.join('／'));
-    ok(nm.indexOf('銘山') >= 0, '句首反覆出現的名字（銘山）抓得到', nm.join('／'));
+    ok(nm.indexOf('明達') >= 0, '夾副詞的名字（明達安慰地說著）抓得到', nm.join('／'));
+    ok(nm.indexOf('德山') >= 0, '句首反覆出現的名字（德山）抓得到', nm.join('／'));
     /* 「小」是名字前綴，但「小飛機」不是人 */
     const b = analyzeNovel('小飛機停在跑道上。小飛機的機翼反著光。\n小飛機又滑行一段。小飛機終於停住。', opt);
     const nb = b.persons.map(p => p.name);
