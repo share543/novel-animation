@@ -15,7 +15,13 @@ const CORE = fs.existsSync(ROOT + '/../src/novel-import-core.js')
   ? ROOT + '/../src/novel-import-core.js'
   : ROOT + '/novel-import-core.js';
 /* cues.js 已否決：698 條 6-8 字長片語在 23 萬字文本命中 0 次 */
-const FILES = ['roles.js', 'looks.js', 'scenes.js', 'cues2.js', 'stories2.js'];
+/* 自動掃描詞庫目錄（新批次丟進來就會被用到，不必改脚本）。
+   cues.js 是早期被否決的長片語型錄（698 條在 23 萬字命中 0 次），永久排除。
+   排序是為了幂等：readdir 的順序不保證穩定。 */
+const SKIP = new Set(['cues.js']);
+const FILES = fs.readdirSync(DIR).filter(function (f) {
+  return /\.js$/.test(f) && !SKIP.has(f);
+}).sort();
 const KEYS = ['ROLE_WORDS','FAMILY_WORDS','NAME_TITLES','ROLE_OUTFIT_HINTS','HAIR','FACE_SHAPES','EYES',
   'MARK_POOL','OUTFITS','PLACE_TEX_BY_NAME','SCENE_TEXTURE','SCENE_LIGHT','SCENE_SEASON',
   'ACTION_PHRASES','FACE_PHRASES','TRAIT_PHRASES','LIGHT_PHRASES','OBJ_CLOSEUP','NOUN_VISUALS','TIME_JUMP'];

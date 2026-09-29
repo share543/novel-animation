@@ -1,11 +1,13 @@
 /* 新詞庫條目的命中驗證：只收「在真實文本真的命中」的條目 */
 const fs = require('fs'), vm = require('vm');
 const ctx = {}; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('/home/arthur/.hermes/cache/scratch/lexicon/stories2.js', 'utf8'), ctx);
+const LEX = process.argv[2] || '/home/arthur/novel-animation/tools/lexicon/stories2.js';
+vm.runInContext(fs.readFileSync(LEX, 'utf8'), ctx);
 const g = (k) => vm.runInContext("typeof " + k + "!=='undefined'?" + k + ":null", ctx);
 
-const files = ['digong.txt', 'corpus/01_陰影裏的人.txt', 'corpus/02_第七者.txt', 'corpus/03_醫生之死.txt', 'corpus/04_工人的願望.txt'];
-const corpus = files.map(f => fs.readFileSync('/home/arthur/.hermes/cache/scratch/' + f, 'utf8')).join('\n');
+const DIR = '/home/arthur/.hermes/cache/scratch/';
+const files = ['digong.txt'].concat(fs.readdirSync(DIR + 'corpus').filter(f => /\.txt$/.test(f)).map(f => 'corpus/' + f));
+const corpus = files.map(f => fs.readFileSync(DIR + f, 'utf8')).join('\n');
 const cnt = (w) => { let n = 0, i = 0; while ((i = corpus.indexOf(w, i)) >= 0) { n++; i += w.length; } return n; };
 const RE = Object.prototype.toString.call(/x/) === '[object RegExp]';
 function rep(name, arr, kh) {

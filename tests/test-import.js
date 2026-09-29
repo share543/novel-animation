@@ -486,6 +486,27 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(/藥瓶特寫：/.test(objLens), '物證特寫用配對的畫面文字（不是關鍵詞本身）', objLens.slice(0, 80));
   ok(!/凶器,|,凶器/.test(objLens), '不會把整個配對陣列串成「凶器,凶器特寫…」', '');
 
+  console.log('\n=== 20. 不帶姓的名字（台灣短篇常見寫法）===');
+  (function () {
+    const opt = { secPerShot: 4, maxChars: 8, maxScenes: 4, wpm: 260 };
+    /* 名字與對白動詞之間夾副詞：「正祥安慰地說著」；以及句首反覆出現的名字 */
+    const a = analyzeNovel('英姐端來一盤炸雞塊。正祥安慰地說著：「別急，錢再賺就有。」\n'
+      + '正祥走進室內，把門帶上。\n銘山一走進客廳，便聞到滿室香味。\n正祥坐下，點起菸。\n'
+      + '銘山抬起頭。\n正祥說道：「等我回來。」\n銘山說道：「好。」', opt);
+    const nm = a.persons.map(p => p.name);
+    ok(nm.indexOf('正祥') >= 0, '夾副詞的名字（正祥安慰地說著）抓得到', nm.join('／'));
+    ok(nm.indexOf('銘山') >= 0, '句首反覆出現的名字（銘山）抓得到', nm.join('／'));
+    /* 「小」是名字前綴，但「小飛機」不是人 */
+    const b = analyzeNovel('小飛機停在跑道上。小飛機的機翼反著光。\n小飛機又滑行一段。小飛機終於停住。', opt);
+    const nb = b.persons.map(p => p.name);
+    ok(nb.indexOf('小飛機') < 0 && nb.indexOf('小飛') < 0, '「小飛機」不會被當成人名', nb.join('／'));
+    /* 代名詞／數詞不能變人名 */
+    const c = analyzeNovel('他說道：「走吧。」\n兩人說道：「好。」\n他向門口走去。\n上前問道：「誰？」', opt);
+    const nc = c.persons.map(p => p.name);
+    ok(nc.indexOf('向他') < 0 && nc.indexOf('兩人') < 0 && nc.indexOf('上前') < 0,
+      '代名詞／數詞不會被當成人名', nc.join('／'));
+  })();
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
