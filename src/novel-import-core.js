@@ -3003,10 +3003,35 @@ function draftSceneDesc(pl, text, era, rank, ctx) {
   return pl.name + '：' + tex + '；' + light + '；' + season;
 }
 
+/* 旁白句的鏡頭語言：既沒有主體、也沒有動作時，靠「這句話在做什麼」決定畫面。
+   原本一律退回「建議用中景空景，或延續上一鏡」，實測佔全部鏡頭的 39.4% ——
+   十分鐘的片子會有四分鐘是空的。人寫的分鏡不會這樣：一句「他想起八年前的事」
+   就是閃回，一句「可見凶手熟悉現場」就是桌面俯視線索。 */
+const NARR_KINDS = [
+  [/想起|回憶|回想|憶及|往事|當年|記得|多年前|年前|小時候|從前|那一年/, '閃回：畫面轉為淡黃偏白、邊緣柔焦，動作放慢'],
+  [/心裡|心中|暗自|不禁|感到|覺得|害怕|擔心|猶豫|後悔|慶幸|難過|高興|氣憤|納悶|快意|得意|滿足|欣慰|心酸|苦澀|緊張|不安|疑惑|震驚|愣住|怔住/, '特寫反應鏡頭：眼神與嘴角的細微變化，背景壓暗留空'],
+  [/隔天|翌日|幾天後|不久|後來|之後|當晚|當天|一個月後|數日|轉眼|接下來的|時間/, '過場：光影在牆面移動，時鐘指針與日曆翻頁交疊'],
+  [/研判|推斷|可見|顯然|想必|認為|推測|分析|判斷|證明|線索|疑點|動機|不在場/, '桌面俯視：線索物件並排攤開，手指點在其中一項上'],
+  [/命案|死者|屍|流血|傷口|凶器|兇器|毒|勒|刺/, '現場俯角：地面痕跡與遺留物入鏡，人物只露鞋尖'],
+  [/雨|風|雪|霧|陽光|月色|夜|天空|雲|冷|寒|熱/, '環境空景：氣象與光線變化，畫面裡沒有人']
+];
+
+/* 心理類（回憶／思考／時間／推論）：可以和角色主體並存 */
+const NARR_KINDS_MENTAL = NARR_KINDS.slice(0, 4);
+
 /* ── 主判斷：這一段畫面裡「誰、在做什麼、什麼光」→ 第③段 ── */
 function visualize(chunk, ctx) {
   const size = ctx.size || '中景';
-  const hit = function (list) { return list.find(function (x) { return chunk.indexOf(x[0]) >= 0; }); };
+  /* 鍵可以是字串（比對子字串）或正規表示式（比對樣式）。
+     一定要分辨：indexOf 收到 RegExp 會把它轉成字串 "/想起|回憶|…/" 去比對，
+     永遠不命中而且不報錯 —— NARR_KINDS 就是這樣整組靜默失效的。
+     （vm 環境裡 instanceof RegExp 不可靠，用 Object.prototype.toString 判定。） */
+  const isRe = function (v) { return Object.prototype.toString.call(v) === '[object RegExp]'; };
+  const hit = function (list) {
+    return list.find(function (x) {
+      return isRe(x[0]) ? x[0].test(chunk) : chunk.indexOf(x[0]) >= 0;
+    });
+  };
   const face = hit(FACE_PHRASES);
   const acts = ACTION_PHRASES.filter(function (x) { return chunk.indexOf(x[0]) >= 0; }).slice(0, 2);
   const light = hit(LIGHT_PHRASES);
@@ -3037,6 +3062,35 @@ function visualize(chunk, ctx) {
   if (jump) parts.push(jump[1]);
   if (addr) parts.push('（對讀者說話）直視鏡頭');
 
+  /* 有主體、但這句話沒有動作（「他想起八年前的事」）→ 補上鏡頭語言。
+     只在完全沒有主體時才看這句話在做什麼是不夠的：實測這種句子原本只拿到
+     「石頭李，中景反應鏡頭」，看不出是回憶。心理類（回憶／思考／時間／推論）
+     可以和主體並存；氣象與命案類只在真的空鏡時用，免得黏在角色身上。 */
+  if (parts.length && !acts.length && !obj && !jump) {
+    const mk = hit(NARR_KINDS_MENTAL);
+    if (mk) {
+      /* 主體那段原本寫了「中景反應鏡頭」，現在有了更精確的鏡頭語言，
+         兩個疊在一起會變成「中景反應鏡頭；特寫反應鏡頭」自相矛盾。 */
+      parts[0] = parts[0].replace(/，(?:遠景|中景|近景|特寫)反應鏡頭$/, '');
+      parts.push(mk[1]);
+    }
+  }
+
+  if (!parts.length) {
+    /* ③-1 沒點名誰在說話的對白 —— 電影的處理是不露臉 */
+    if (ctx.dialogue) parts.push('群像或背影：說話者的肩線與手勢入鏡，不露臉');
+    /* ③-2 這句在回憶／思考／推論／時間推移… → 有對應的鏡頭語言。
+       一定要排在「場景空景」前面：場景幾乎每一鏡都承接得到，先判場景的話
+       917 鏡會全部變成空景，把真正有資訊的分類全擋掉（實測就是這樣）。 */
+    if (!parts.length) {
+      const kind = hit(NARR_KINDS);
+      if (kind) parts.push(kind[1]);
+    }
+    /* ③-3 還是沒有，但這一段有承接到的場景 → 用那個場景的空景（比泛用提示有用得多） */
+    if (!parts.length && ctx.scene) {
+      parts.push(ctx.scene + '：' + (PLACE_FLAVOR[ctx.sceneType] || '環境交代') + '的空景，畫面裡沒有人');
+    }
+  }
   if (!parts.length) {
     /* 真的沒有可視線索（純抽象敘述）—— 誠實給建議，不要硬掰出畫面 */
     return '（敘述句，無明確動作）建議用' + size + '空景，或延續上一鏡畫面';
@@ -3044,6 +3098,44 @@ function visualize(chunk, ctx) {
   let out = parts.join('；');
   if (out.length > 80) out = out.slice(0, 80);
   return out;
+}
+
+/* 前言雜訊：書名、作者、刊載資訊、轉載聲明不該變成鏡頭。實測 19 鏡，而且
+   全部落在最開頭 —— 影片會用版權頁開場，這是最顯眼的地方。
+   只砍開頭與結尾，而且是「短句＋像版權資訊」才砍，正文一律不動。 */
+const CREDIT_RE = /推理雜誌|轉載自|刊載|徵文|第[0-9０-９一二三四五六七八九十]+期|月號|作者|版權|翻印|定價|發行|出版/;
+function stripCredits(sents) {
+  const clean = s => s.replace(/\s/g, '');
+  /* OCR 常把「書名 作者 著‧轉載自推理雜誌第6期74年4月號推理攝影徵文‧正文第一句」
+     整串黏成一句 —— 整句砍掉會連正文一起砍掉（實測 01／02 就是這樣留下 3 鏡前言）。
+     所以先砍「句內的版權前綴」，再處理整句層級。 */
+  const CUT_RE = /轉載自|刊載於|刊載|推理雜誌|第[0-9０-９一二三四五六七八九十]+期|[0-9０-９一二三四五六七八九十]+年[0-9０-９一二三四五六七八九十]+月號|徵文|作者[:：]|版權|出版|發行/g;
+  const stripPrefix = function (s) {
+    CUT_RE.lastIndex = 0;
+    let last = -1, m;
+    while ((m = CUT_RE.exec(s))) { if (m.index > 60) break; last = m.index + m[0].length; }
+    if (last < 0 || last >= s.length - 4) return s;   /* 砍完就沒內容了 → 不砍 */
+    const rest = s.slice(last).replace(/^[\s‧・、,，。：:；;「」"'…]+/, '');
+    return rest.length >= 4 ? rest : s;
+  };
+  const out = sents.slice();
+  for (let k = 0; k < 2 && k < out.length; k++) out[k] = stripPrefix(out[k]);
+
+  const isCredit = s => clean(s).length <= 40 && CREDIT_RE.test(s);
+  /* 書名本身不含任何版權字樣（「鄭探長探案08」），但它一定緊接著版權行 ——
+     所以要看下一句。實測只砍版權字樣時，書名那行留著，前言雜訊照樣 14 鏡。 */
+  const looksTitle = s => clean(s).length <= 24 && !/[。！？]/.test(s) && !/「/.test(s);
+  let a = 0;
+  while (a < out.length && a < 6) {
+    const cur = out[a], nxt = out[a + 1] || '';
+    if (isCredit(cur)) { a++; continue; }
+    if (looksTitle(cur) && isCredit(nxt)) { a++; continue; }
+    break;
+  }
+  let b = out.length;
+  while (b > a + 2 && out.length - b < 4 && clean(out[b - 1]).length <= 40 && CREDIT_RE.test(out[b - 1])) b--;
+  if (a === 0 && b === out.length) return out;
+  return out.slice(a, b);
 }
 
 /* 主分析：文字 → { persons, places, shots, stats } */
@@ -3069,7 +3161,7 @@ function analyzeNovel(rawText, opt) {
 
   const places = extractPlaces(text, opt.maxScenes);
 
-  const sents = splitSentences(text);
+  const sents = stripCredits(splitSentences(text));
   /* 合併句子成鏡頭：到達目標字數就切 */
   const merged = [];
   let buf = '';
@@ -3148,9 +3240,13 @@ function analyzeNovel(rawText, opt) {
        改成尊重使用者的設定（至少 8 秒的彈性）。 */
     const durCap = Math.max(8, secPerShot * 1.5);
     const dur = Math.min(durCap, Math.max(2, Math.round(chars / wpm * 60 * 10) / 10));
+    const curPlace = places.filter(p => p.name === curScene)[0];
     shots.push({
       narr: chunk, size, move, dur,
-      lens: visualize(chunk, { who: who, whoFrom: whoFrom, size: size, places: places, names: nameRe, trait: trait }),
+      lens: visualize(chunk, {
+        who: who, whoFrom: whoFrom, size: size, places: places, names: nameRe, trait: trait,
+        scene: curScene, sceneType: curPlace ? curPlace.type : '', dialogue: isDialogue
+      }),
       _who: who, _whoFrom: whoFrom, _scene: curScene, _chars: chars
     });
   });
