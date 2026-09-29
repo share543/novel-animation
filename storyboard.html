@@ -718,7 +718,7 @@ function copyAll(){
 }
 
 /* ═══════════ 小說匯入（純離線：讀檔 → 抽取 → 產生專案） ═══════════
-   支援 .txt / .md / .html / .docx / .pdf，全部用瀏覽器原生 API，無任何外部函式庫。
+   支援 .txt / .md / .html / .docx，全部用瀏覽器原生 API，無任何外部函式庫。
    .docx 用 DecompressionStream('deflate-raw') 解 ZIP，不需要 JSZip 之類的套件。 */
 
 /* 畫風預設（第④段）。DEF_STYLE 仍是預設值，不動。 */
@@ -1385,9 +1385,15 @@ async function buildCmaps(resText, objs) {
         if (t2 !== null) { tu = t2; break; }
       }
     }
+    /* 沒有 ToUnicode 時的可靠度判斷：
+       真正的拉丁文字型 FirstChar 一定 >= 32；若落在控制字元區（老舊中文產生器
+       把 CJK 子集偽裝成 Type1 就是這樣），拿 WinAnsi 回退只會得到亂碼，
+       必須把這些字標成 suspect，而不是當成正常輸出。 */
+    const fc = /\/FirstChar\s+(\d+)/.exec(d);
+    const reliable = fc ? +fc[1] >= 32 : true;
     if (tu === null) {
       /* 沒有 ToUnicode：CID 字型無解；簡單字型用標準編碼回退 */
-      out.cmaps[name] = { map: new Map(), twoByte: false, simple: !isCID };
+      out.cmaps[name] = { map: new Map(), twoByte: false, simple: !isCID, reliable: reliable && !isCID };
       if (!isCID) out.simpleFonts++;
       continue;
     }
@@ -1417,7 +1423,7 @@ async function collectRuns(txt, opt) {
   const depth = opt.depth || 0;
   const runs = [];
   let font = null, tm = [1, 0, 0, 1, 0, 0], ctm = [1, 0, 0, 1, 0, 0], leading = 0;
-  let cur = '', cx = null, cy = null, mapped = 0, unmapped = 0;
+  let cur = '', cx = null, cy = null, mapped = 0, unmapped = 0, suspect = 0;
   const stack = [];
   const flush = () => {
     if (cur.trim() && cx !== null) runs.push({ x: cx, y: cy, text: cur });
@@ -1429,25 +1435,35 @@ async function collectRuns(txt, opt) {
   const start = () => { if (cx === null) { const p = matMul(tm, base); cx = p[4]; cy = p[5]; } };
   const put = ch => { start(); cur += ch; };
   const cm = () => cmaps[font] || { map: new Map(), twoByte: false, simple: true };
+  /* 回退路徑（字型沒有 ToUnicode）產生的字另外計數：
+     可靠字型的回退沒問題（正常英文 PDF 就是這樣），
+     不可靠字型的回退是亂碼，不能算成「成功對照」。 */
+  const emit = (code, c) => {
+    if (c.simple) {
+      const ch = stdChar(code);
+      if (ch === undefined) { unmapped++; return; }
+      if (c.reliable === false) suspect++; else mapped++;
+      put(ch);
+      return;
+    }
+    let ch = c.map.get(code);
+    if (ch === undefined) {
+      ch = stdChar(code);
+      if (ch === undefined) { unmapped++; return; }
+      suspect++; put(ch); return;
+    }
+    mapped++; put(ch);
+  };
   const showHex = h => {
     const c = cm(), step = c.twoByte ? 4 : 2;
-    for (let i = 0; i + step - 1 < h.length; i += step) {
-      const code = parseInt(h.substr(i, step), 16);
-      const ch = c.simple ? stdChar(code) : c.map.get(code);
-      if (ch === undefined) unmapped++; else { put(ch); mapped++; }
-    }
+    for (let i = 0; i + step - 1 < h.length; i += step) emit(parseInt(h.substr(i, step), 16), c);
   };
   const showLit = lit => {
     const s = lit.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_, c) =>
       c === 'n' ? '\n' : c === 'r' ? '\r' : c === 't' ? '\t' : c === 'b' ? '\b' : c === 'f' ? '\f'
         : /^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : c);
     const c = cm();
-    for (let i = 0; i < s.length; i++) {
-      const code = s.charCodeAt(i);
-      let ch = c.simple ? stdChar(code) : c.map.get(code);
-      if (ch === undefined && !c.simple) ch = stdChar(code);
-      if (ch === undefined) unmapped++; else { put(ch); mapped++; }
-    }
+    for (let i = 0; i < s.length; i++) emit(s.charCodeAt(i), c);
   };
 
   const N = '(-?[\\d.]+)\\s+';
@@ -1501,7 +1517,7 @@ async function collectRuns(txt, opt) {
             }
             const r2 = await collectRuns(st.text, sub);
             for (const r of r2.runs) runs.push(r);
-            mapped += r2.mapped; unmapped += r2.unmapped;
+            mapped += r2.mapped; unmapped += r2.unmapped; suspect += r2.suspect || 0;
           }
         }
       }
@@ -1514,7 +1530,23 @@ async function collectRuns(txt, opt) {
     }
   }
   flush();
-  return { runs: runs, mapped: mapped, unmapped: unmapped };
+  return { runs: runs, mapped: mapped, unmapped: unmapped, suspect: suspect };
+}
+
+/* 兜底檢查：抽出來的東西像不像正常文字。
+   判據用「WinAnsi 特殊字元區的密度」，這是實測出來的乾淨分界：
+   正常檔（中文／英文論文／ER 圖）皆為 0.000；被硬解的中文 PDF 是 0.13 以上。
+   這種字元只有在把 CJK 碼硬套 WinAnsi 對照時才會冒出來。
+   另外要求字母比例偏低，避免法德文之類帶重音的正常文件被誤判。 */
+function looksGarbled(t) {
+  const s = t.replace(/\s+/g, '');
+  if (s.length < 200) return false;
+  const n = s.length;
+  const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length / n;
+  if (cjk > 0.1) return false;                       /* 有中文 → 正常 */
+  const odd = (s.match(/[\u201a\u0192\u201e\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178\u00a0-\u00ff]/g) || []).length / n;
+  const letters = (s.match(/[A-Za-z]/g) || []).length / n;
+  return odd > 0.05 && letters < 0.6;
 }
 
 /* 依視覺順序把文字段接成行。
@@ -1522,6 +1554,15 @@ async function collectRuns(txt, opt) {
    但雙欄論文單純依 y 排會把兩欄交錯，所以要先偵測欄界。 */
 function runsToText(runs) {
   if (!runs.length) return '';
+  /* 去重：有些 PDF 用「同位置緊接著重畫一次」模擬粗體，不去重會變成「富富昇昇」。
+     只比對「相鄰」的段落 —— 用全域 Set 會把表格裡合法重複的字砍掉（實測某表覆蓋率 100%→56%）。 */
+  const uniq = [];
+  for (const r of runs) {
+    const p = uniq[uniq.length - 1];
+    if (p && p.text === r.text && Math.abs(p.x - r.x) < 1 && Math.abs(p.y - r.y) < 1) continue;
+    uniq.push(r);
+  }
+  runs = uniq;
   const tol = 2.4;
   const sorted = runs.slice().sort((a, b) => (b.y - a.y) || (a.x - b.x));
   const groups = [];
@@ -1584,7 +1625,7 @@ async function pdfToText(buf) {
   }
 
   const allPages = [];
-  let mapped = 0, unmapped = 0, fontCount = 0, cmapCount = 0, simpleFonts = 0, unsupported = null;
+  let mapped = 0, unmapped = 0, suspect = 0, fontCount = 0, cmapCount = 0, simpleFonts = 0, unsupported = null;
 
   for (const pn of pageNums) {
     const pdict = dictOf(objs.get(pn));
@@ -1613,7 +1654,7 @@ async function pdfToText(buf) {
       if (!st) continue;
       if (st.unsupported) { unsupported = st.unsupported; continue; }
       const r = await collectRuns(st.text, { cmaps: built.cmaps, objs: objs, xobjs: built.xobjs });
-      mapped += r.mapped; unmapped += r.unmapped;
+      mapped += r.mapped; unmapped += r.unmapped; suspect += r.suspect || 0;
       runs.push(...r.runs);
     }
     const t = runsToText(runs);
@@ -1625,6 +1666,16 @@ async function pdfToText(buf) {
   if (unsupported) {
     status = 'unsupported';
     note = '這個 PDF 的內文用了 ' + unsupported + ' 壓縮，離線版無法解開。';
+  } else if (suspect > 30 && suspect > mapped * 0.25) {
+    /* 字型沒有 Unicode 對照表，靠標準編碼硬解 → 出來是亂碼。
+       這種 PDF（老舊中文產生器把 CJK 子集偽裝成 Type1）連 pdftotext 都抽不出來。 */
+    status = 'garbled';
+    note = '這個 PDF 的文字層是壞的：內文用了沒有 Unicode 對照表的字型，硬解只會得到亂碼。' +
+      '好消息是頁面本身通常很清楚 —— 用 OCR，或在閱讀器全選複製。';
+  } else if (looksGarbled(text)) {
+    status = 'garbled';
+    note = '抽出來的內容不像正常文字（可能是字型對照表損壞）。' +
+      '建議用 OCR，或在閱讀器全選複製後貼上來。';
   } else if (unmapped > 200 && mapped < unmapped * 0.35) {
     status = 'no-unicode';
     note = '這個 PDF 的字型沒有 ToUnicode 對照表，抽出來會是亂碼（老舊中文產生器常見）。';
@@ -1633,8 +1684,9 @@ async function pdfToText(buf) {
     note = '抽不到任何文字 —— 這應該是掃描版（整頁是圖片），需要 OCR 才辦得到。';
   }
   return {
-    status: status, note: note, text: text, pages: pageNums.length, fonts: fontCount,
-    cmaps: cmapCount, simpleFonts: simpleFonts, mapped: mapped, unmapped: unmapped
+    status: status, note: note, text: status === 'ok' ? text : '', sample: text.slice(0, 300),
+    pages: pageNums.length, fonts: fontCount,
+    cmaps: cmapCount, simpleFonts: simpleFonts, mapped: mapped, unmapped: unmapped, suspect: suspect
   };
 
   function findFirst(objs, re) {

@@ -222,6 +222,30 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   const r6 = await pdfToText(Buffer.from('這不是 PDF', 'utf8'));
   ok(r6.status === 'not-pdf', '非 PDF 檔案被擋下', r6.status);
 
+  /* 壞掉的文字層（老舊中文產生器）：簡單字型、沒有 ToUnicode、FirstChar 落在控制字元區。
+     實測案例是真的（2008 年掃描重製的中文小說 PDF，連 pdftotext 都只吐亂碼）。
+     這種檔必須回報 garbled，而且不可把亂碼交給使用者。 */
+  const fakeBold = '\\101'.repeat(40);          /* 內容是 'A'，但字型宣稱 FirstChar=1 */
+  const broken = buildPDF([
+    { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { n: 2, dict: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { n: 3, dict: '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> ' +
+        '/Contents 4 0 R /MediaBox [0 0 300 300] >>' },
+    { n: 4, dict: '<< /Length @L >>', stream: 'BT /F1 12 Tf 1 0 0 1 20 100 Tm (' + fakeBold + ') Tj ET\n' },
+    { n: 5, dict: '<< /Type /Font /Subtype /Type1 /BaseFont /Broken /FirstChar 1 /LastChar 5 >>' }
+  ]);
+  const r7 = await pdfToText(broken);
+  ok(r7.status === 'garbled', '沒有 Unicode 對照表的字型被認出（state garbled）', r7.status);
+  ok(r7.text === '' && r7.suspect > 30, 'garbled 時不把硬解出的亂碼交給使用者',
+    { text: r7.text.slice(0, 20), suspect: r7.suspect });
+
+  /* 疊印模擬粗體：同一段文字在同一位置畫兩次，只能算一次 */
+  const dbl = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <00410042> Tj ET\n' +
+    'BT /F1 12 Tf 1 0 0 1 20 100 Tm <00410042> Tj ET\n';
+  const r8 = await pdfToText(pdfWith(CMapBfchar, dbl, false));
+  ok(r8.text.replace(/\s/g, '') === '狄公', '同位置疊印的文字只算一次（不變成「狄公狄公」）',
+    JSON.stringify(r8.text));
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
