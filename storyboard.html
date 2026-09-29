@@ -1550,7 +1550,11 @@ function analyzeNovel(rawText, opt) {
     else if (i < chunks.length - 1 && places.some(p => chunks[i + 1].indexOf(p.name) >= 0)) move = '緩慢拉遠';
     else move = MOVE_CYCLE[i % MOVE_CYCLE.length];
     const chars = chunk.replace(/\s/g, '').length;
-    const dur = Math.min(8, Math.max(2, Math.round(chars / wpm * 60 * 10) / 10));
+    /* 秒數上限原本硬寫 8 秒，但介面允許設到 10 秒 ——
+       設 8 秒以上時單鏡秒數被壓在 8，估時會低估 21~29%，單元數跟著算錯。
+       改成尊重使用者的設定（至少 8 秒的彈性）。 */
+    const durCap = Math.max(8, secPerShot * 1.5);
+    const dur = Math.min(durCap, Math.max(2, Math.round(chars / wpm * 60 * 10) / 10));
     shots.push({
       narr: chunk, size, move, dur,
       lens: visualize(chunk, { who: who, whoFrom: whoFrom, size: size, places: places, names: nameRe, trait: trait }),

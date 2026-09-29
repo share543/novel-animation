@@ -343,6 +343,19 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(rj.places.every(p => p.descDraft), '每個場景都有描述草稿',
     rj.places.map(p => p.name).join('／'));
 
+  console.log('\n=== 16. 每鏡秒數與估時 ===');
+  /* 介面允許每鏡 2–10 秒，但秒數上限原本硬寫 8 秒：
+     設 8 秒時估時低估 21%、設 10 秒低估 29%，單元數會跟著算錯。 */
+  const capText = '他走進屋裡，坐下。他看著窗外，嘆了一口氣。他站起來，轉身離開。'
+    + '他拿起桌上的信件，低頭讀著。他放下信件，走出房間，回頭看了一眼。';
+  [4, 8, 10].forEach(function (sec) {
+    const rr = analyzeNovel(capText, { secPerShot: sec, maxChars: 8, maxScenes: 6 });
+    const truth = capText.replace(/\s/g, '').length / 260;
+    const off = Math.abs(rr.stats.minutes - truth) / truth;
+    ok(off < 0.15, '每鏡 ' + sec + ' 秒的估時誤差不超過 15%',
+      Math.round(off * 100) + '%');
+  });
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
