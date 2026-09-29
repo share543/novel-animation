@@ -110,8 +110,8 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
   <button class="btn s" onclick="save()">儲存</button>
   <button class="btn s" onclick="load()">載入</button>
   <button class="btn s" onclick="exportJSON()">備份</button>
-  <button class="btn s" onclick="document.getElementById('fi').click()">匯入</button>
-  <input type="file" id="fi" accept=".json" style="display:none" onchange="importJSON(event)">
+  <button class="btn s" title="匯入專案備份（.json）或小說原稿（.txt／.md／.html／.docx／.pdf）" onclick="document.getElementById('fi').click()">匯入</button>
+  <input type="file" id="fi" accept=".json,.txt,.md,.markdown,.html,.htm,.docx,.pdf" style="display:none" onchange="importAny(event)">
   <button class="btn s" onclick="loadDemo()">載入範例</button>
   <button class="btn s" onclick="newProject()">新專案</button>
 </header>
@@ -641,19 +641,31 @@ function dl(name, text, type){
   a.click(); URL.revokeObjectURL(a.href);
 }
 function exportJSON(){ dl('novel-project.json', JSON.stringify(S,null,2), 'application/json'); }
+/* 主選單「匯入」的分流：
+   .json → 專案備份（原本行為）；其餘文字格式 → 當小說原稿，走「匯入小說」那條路。
+   兩條路共用同一份實作，不重複寫解析邏輯。 */
+function importAny(e){
+  const f=e.target.files[0]; if(!f)return;
+  if(/\.json$/i.test(f.name)){ importJSON(e); return; }
+  e.target.value='';
+  const t=document.querySelector('nav.tabs button[data-p="novel"]');
+  if(t) t.click();
+  loadNovelFileObj(f);
+}
+
 function importJSON(e){
   const f=e.target.files[0]; if(!f)return;
   const r=new FileReader();
   r.onload=()=>{
     let o;
     try{ o=JSON.parse(r.result); }
-    catch(err){ alert('匯入失敗：這不是有效的 JSON 檔。\n\n要匯入小說原稿，請用「📖 匯入小說」分頁（支援 .txt／.md／.html／.docx／.pdf）。'); e.target.value=''; return; }
+    catch(err){ alert('匯入失敗：這不是有效的 JSON 檔。\n\n要匯入小說原稿，在同一個「匯入」按鈕直接選 .txt／.md／.html／.docx／.pdf 即可。'); e.target.value=''; return; }
     /* 先驗證形狀，通過才指派 S。
        舊寫法是 S=JSON.parse(...)，只要後面的 syncForm 一拋錯，
        S 就已被壞物件汙染 —— 再按「儲存」會把壞資料寫進 localStorage。 */
     if(!o||typeof o!=='object'||Array.isArray(o)||!o.meta||typeof o.meta!=='object'
        ||!Array.isArray(o.chars)||!Array.isArray(o.scenes)||!Array.isArray(o.shots)){
-      alert('匯入失敗：這不是本工具「備份」下載的專案檔。\n\n要匯入小說原稿，請用「📖 匯入小說」分頁（支援 .txt／.md／.html／.docx／.pdf）。');
+      alert('匯入失敗：這不是本工具「備份」下載的專案檔。\n\n要匯入小說原稿，在同一個「匯入」按鈕直接選 .txt／.md／.html／.docx／.pdf 即可。');
       e.target.value=''; return;
     }
     const broken=a=>a.some(x=>!x||typeof x!=='object'||typeof x.id!=='string'||!x.id);
@@ -1752,6 +1764,12 @@ function loadNovelFile(e) {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
   if (!f) return;
+  loadNovelFileObj(f);
+}
+
+/* 真正處理檔案的入口。抽出來是因為主選單的「匯入」按鈕也要用同一條路
+   （.json 走專案備份，其餘文字格式當小說原稿）。 */
+function loadNovelFileObj(f) {
   const low = f.name.toLowerCase();
   if (low.endsWith('.doc')) {
     nfMsg('舊版 <b>.doc</b> 是二進位格式，無法離線解析。請在文書軟體另存為 <b>.docx</b>，或把全文複製貼到下面的框。', true);

@@ -246,6 +246,14 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(r8.text.replace(/\s/g, '') === '狄公', '同位置疊印的文字只算一次（不變成「狄公狄公」）',
     JSON.stringify(r8.text));
 
+  console.log('\n=== 10. 主選單「匯入」分流 ===');
+  ok(typeof importAny === 'function', 'importAny 存在（主選單匯入的分流器）');
+  ok(typeof loadNovelFileObj === 'function', 'loadNovelFileObj 存在（與匯入小說共用同一條路）');
+  ok(/id="fi"[^>]*accept="[^"]*\.txt/.test(src), '#fi 的 accept 含 .txt');
+  ok(/onchange="importAny\(event\)"/.test(src), '#fi 綁 importAny，不是只綁 importJSON');
+  ok(/function importAny\(e\)\{[\s\S]{0,160}?importJSON\(e\)/.test(src), 'importAny 遇到 .json 仍走 importJSON（不破壞備份匯入）');
+  ok(/loadNovelFileObj\(f\)/.test(src), 'importAny 把原稿交給 loadNovelFileObj');
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
