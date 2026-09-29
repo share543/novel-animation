@@ -762,6 +762,11 @@ const ROLE_WORDS = ['偵探', '警探', '警官', '警察', '刑警', '員警', 
   '姊姊', '妹妹', '姐姐', '爺爺', '奶奶', '外公', '外婆', '師父', '師傅', '徒弟',
   '合夥人', '上司', '同事', '男友', '女友', '情婦', '長官', '探長', '校長', '房客'];
 
+/* 家族／關係詞 —— 這些是身份不是職業，不能當成「這個人是做什麼的」 */
+const FAMILY_WORDS = new Set(['父親', '母親', '爸爸', '媽媽', '兒子', '女兒', '妻子', '太太', '丈夫',
+  '哥哥', '弟弟', '姊姊', '妹妹', '姐姐', '爺爺', '奶奶', '外公', '外婆', '師父', '師傅', '徒弟',
+  '合夥人', '男友', '女友', '情婦', '上司', '同事', '長官', '校長', '房客']);
+
 /* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「鄭木貴探長」） */
 const NAME_TITLES = ['探長', '警官', '警探', '刑警', '隊長', '組長', '醫生', '律師', '教授',
   '檢察官', '法醫', '偵探', '老師', '船長'];
@@ -869,6 +874,7 @@ const SPEAK_VERBS = ['說道', '問道', '答道', '喝道', '叫道', '罵道',
    由短到長很重要：貪婪匹配會把「馬榮高聲罵道」抓成「高聲罵」。 */
 function extractPersons(text, limit) {
   const cnt = new Map();
+  const intro = new Set();          /* 「我叫X」句型抓到的名字＝敘述者候選 */
   const bump = n => cnt.set(n, (cnt.get(n) || 0) + 1);
   for (const v of SPEAK_VERBS) {
     let idx = -1;
@@ -891,7 +897,7 @@ function extractPersons(text, limit) {
       for (let len = 4; len >= 2; len--) {
         const cand = text.slice(s, s + len);
         if (!/^[\u4e00-\u9fff]+$/.test(cand) || cand.length !== len) continue;
-        if (tailOK(text[s + len] || '')) { if (looksLikeName(cand)) { bump(cand); break; } }
+        if (tailOK(text[s + len] || '')) { if (looksLikeName(cand)) { bump(cand); intro.add(cand); break; } }
       }
     }
   }
@@ -913,13 +919,16 @@ function extractPersons(text, limit) {
     .sort((a, b) => b.count - a.count);
   /* 職稱：出現 ≥3 次且沒被當成名字抓過，就當一個角色（偵探小說常寫「偵探說」）。 */
   const roles = [];
+  /* 短篇的門檻要低一點：1,000 字的故事裡「合夥人」出現 2 次就是主要角色，
+     用長篇的門檻（3 次）會整個漏掉。長篇維持 3 次避免雜訊。 */
+  const need = text.length < 3000 ? 2 : 3;
   for (const w of ROLE_WORDS) {
     if (cnt.has(w)) continue;
     const c = (text.split(w).length - 1);
-    if (c >= 3) roles.push({ name: w, count: c, role: w });
+    if (c >= need) roles.push({ name: w, count: c, role: w });
   }
   roles.sort((a, b) => b.count - a.count);
-  return names.concat(roles).slice(0, limit);
+  return { persons: names.concat(roles).slice(0, limit), intro: [...intro] };
 }
 
 /* ---- 讀檔：一律先讀成 ArrayBuffer，再判斷編碼 ---- */
@@ -1140,12 +1149,331 @@ function seedLens(chunk, size, move) {
   return s;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   判斷層：把旁白文字判斷成「畫面」
+   目的：匯入小說後直接產出可用的第③段鏡頭描述，不必逐鏡手寫。
+   全部規則式、零外部呼叫（維持單檔離線的硬性要求）。
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── 敘述者（第一人稱）──
+   第一人稱小說用「我」敘述，主角名字可能只出現一兩次。
+   不處理的話主角在鏡頭表裡幾乎全程缺席（實測 39/59 鏡無角色）。
+   判斷順序：①「我叫X」句型 ②「我，X，」同位語 ③只認得出一個真人名 */
+function detectNarrator(text, persons, introNames) {
+  const wo = (text.match(/我/g) || []).length;
+  if (wo < 3) return { name: '', firstPerson: false, wo: wo };
+  for (const n of introNames) if (persons.some(p => p.name === n)) return { name: n, firstPerson: true, wo: wo };
+  for (const p of persons) {
+    if (new RegExp('我[，、,]?\\s*' + p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(text))
+      return { name: p.name, firstPerson: true, wo: wo };
+  }
+  const real = persons.filter(p => !p.role);
+  if (real.length === 1) return { name: real[0].name, firstPerson: true, wo: wo };
+  return { name: '', firstPerson: true, wo: wo };   /* 有「我」但認不出是誰 */
+}
+
+/* ── 代名詞消解 ──
+   「他／她」回指前文最近被點名的角色。小說是連續敘事，
+   代名詞通常指向前面最近出現的人；她偏女性角色、他偏男性。 */
+const FEMALE_WORDS = ['母親', '媽媽', '妻子', '太太', '女兒', '姊姊', '妹妹', '姐姐', '奶奶', '外婆',
+  '女友', '情婦', '老闆娘', '護士', '學姊', '寡婦', '老婦', '少女', '女孩', '女人'];
+const MALE_WORDS = ['父親', '爸爸', '丈夫', '兒子', '哥哥', '弟弟', '爺爺', '外公', '男友', '師父',
+  '師傅', '探長', '警官', '警探', '刑警', '醫生', '律師', '檢察官', '法醫', '警衛', '船長', '男人', '老人'];
+
+function genderOf(p) {
+  if (FEMALE_WORDS.indexOf(p.name) >= 0) return 'f';
+  if (MALE_WORDS.indexOf(p.name) >= 0) return 'm';
+  return '';
+}
+
+/* 中文名字的性別傾向（看最後一個字）。只在沒有其他線索時當「提示」用 ——
+   敘述者幾乎不會被「他」指涉到（他自己就是「我」），這條是最後一道。 */
+const NAME_MALE_CHARS = '貴雄強明華國文武龍志建偉豪傑宏昌盛福財發信義德正宗良清山虎剛毅';
+const NAME_FEMALE_CHARS = '美麗花芳娟淑惠玲珍貞妹女香玉珠琴娥嬌雯靜怡';
+function nameGender(name) {
+  if (!name || name.length < 2) return '';
+  const c = name[name.length - 1];
+  if (NAME_MALE_CHARS.indexOf(c) >= 0) return 'm';
+  if (NAME_FEMALE_CHARS.indexOf(c) >= 0) return 'f';
+  return '';
+}
+
+/* 用代名詞反推性別：文中出現「他」時，往前找最近被點名的角色，那就是男性；
+   「她」同理是女性。角色詞以外的名字（鄭木貴、林小姐…）靠這條才判得出性別。 */
+function inferGenders(text, persons) {
+  const g = {};
+  persons.forEach(function (p) { const x = genderOf(p); if (x) g[p.name] = x; });
+  const re = /(?<!其)[他她]/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const k = m.index;
+    let best = '', at = -1;
+    for (const p of persons) {
+      const q = text.lastIndexOf(p.name, k - 1);
+      if (q > at && k - q <= 40) { at = q; best = p.name; }
+    }
+    if (best && !g[best]) g[best] = m[0] === '她' ? 'f' : 'm';
+  }
+  return g;
+}
+
+/* ── 動作詞 → 畫面寫法（長詞優先，先命中先算）── */
+const ACTION_PHRASES = [
+  ['走進', '推門進屋'], ['走入', '走入畫面'], ['走出', '轉身走出畫面'], ['離開', '背影遠去'],
+  ['衝進', '猛然衝入畫面'], ['奔跑', '奔跑，動態感'], ['跑向', '快步跑向'], ['跑出', '跑出畫面'],
+  ['跑進', '跑進畫面'], ['跑走', '奔逃而去'], ['逃跑', '倉皇奔逃'],
+  ['奔', '奔跑'],
+  ['坐下', '坐下，身體前傾'], ['坐著', '靜坐'], ['站起', '起身站立'], ['起身', '起身'],
+  ['站著', '站定不動'], ['轉身', '側身轉頭'], ['回頭', '回頭望向鏡頭外'],
+  ['低頭', '低下頭'], ['抬頭', '抬起頭'], ['仰望', '仰頭'], ['趴', '伏在桌面'],
+  ['凝視', '凝視不動'], ['注視', '注視'], ['望向', '望向鏡頭外'], ['看著', '目光停留'],
+  ['瞥', '眼角餘光一瞥'], ['翻開', '翻開手中物'], ['拿起', '伸手拿起'], ['放下', '放下手中物'],
+  ['握', '緊握'], ['抓', '抓住'], ['打開', '伸手打開'], ['推開', '推開'],
+  ['哭', '眼眶含淚'], ['流淚', '淚水滑落'], ['笑', '嘴角上揚'],
+  ['喊', '張口吶喊'], ['喝酒', '舉杯就口'],
+  ['發抖', '身體微微顫抖'], ['抖', '顫抖'], ['睡', '閉眼入睡'], ['醒', '睜開眼'],
+  ['死', '倒臥不起'], ['自殺', '倒臥地面'], ['寫', '低頭書寫'], ['抽菸', '吐出一口煙'],
+  ['拍照', '舉起相機'], ['跪', '跪在地上'], ['扭打', '糾纏扭打'], ['打鬥', '出手揮擊'],
+  ['打架', '糾纏扭打'], ['打起來', '扭打成一團'],
+  ['痛哭', '淚水滑落，肩膀顫動'], ['大哭', '淚水滑落，肩膀顫動'],
+  ['逃跑', '倉皇奔逃'], ['藏', '隱身暗處'], ['躲', '側身閃避'], ['追', '快步追趕']
+];
+
+/* ── 情緒／狀態 → 臉部與身體的畫面 ── */
+const FACE_PHRASES = [
+  ['沮喪', '眉間緊鎖，眼神低垂'], ['悲傷', '眼眶泛紅，嘴角下垂'], ['難受', '眉心微蹙'],
+  ['悲', '神情哀傷'], ['憤怒', '眉心糾結，下顎緊繃'], ['生氣', '臉色漲紅'],
+  ['恐懼', '瞳孔放大，嘴唇微張'], ['害怕', '身體微微後縮'], ['驚', '瞪大眼睛，身體一僵'],
+  ['慌亂', '眼神游移不定'], ['緊張', '肩膀緊繃'], ['焦急', '眉頭深鎖'],
+  ['高興', '嘴角上揚，眼尾帶笑'], ['興奮', '眼神發亮'], ['滿意', '嘴角微揚'],
+  ['疲憊', '眼下陰影，神情倦怠'], ['蒼白', '面色蒼白'], ['醉', '眼神迷濛'],
+  ['痛', '皺眉咬牙'], ['沉默', '面無表情'], ['冷冷', '眼神冰冷'],
+  ['慌', '神情不安'],
+  ['發抖', '嘴唇發白'], ['笑', '嘴角微揚'],
+  ['激賞', '眼神發亮，嘴角上揚'], ['得意', '下巴微抬'], ['痛快', '眼神凌厲'],
+  ['恨', '眼神陰沉'], ['怨恨', '眼神陰冷'], ['後悔', '視線下垂'],
+  ['羞愧', '別開視線'], ['絕望', '眼神空洞'], ['無奈', '肩線下沉'],
+  ['感慨', '凝視遠方'], ['振作', '挺直背脊'], ['堅定', '眼神堅定'],
+  ['懷念', '眼神溫柔'], ['恐懼', '瞳孔放大'], ['失神', '目光沒有焦點']
+];
+
+/* ── 氣質詞（不是情緒）──
+   「忠厚老實」這種詞是在形容某個人，出現在句子裡不代表主體就是它描述的對象
+   （「我找尋那個忠厚老實的人」——被形容的是那個人，不是「我」）。
+   只有在名字後面 6 字內出現才套用，並改用那個名字當主體。 */
+const TRAIT_PHRASES = [
+  ['忠厚老實', '面相憨厚，眼神溫和'], ['精明', '眼神銳利'],
+  ['老實', '面相樸實'], ['兇惡', '面相兇惡'], ['溫和', '神情溫和'],
+  ['憔悴', '面容憔悴，眼下陰影'], ['滄桑', '面容滄桑'], ['斯文', '舉止斯文']
+];
+
+function traitSubject(chunk, names) {
+  for (const t of TRAIT_PHRASES) {
+    const k = chunk.indexOf(t[0]);
+    if (k < 0) continue;
+    /* 取「離氣質詞最近」的名字，不是清單裡第一個命中的。
+       「父親的合夥人看起來忠厚老實」——被形容的是合夥人，不是父親；
+       父親雖然也在 8 字內，但距離比較遠。 */
+    let best = '', bestGap = 9;
+    for (const n of names) {
+      const p = chunk.lastIndexOf(n, k - 1);
+      if (p < 0) continue;
+      const gap = k - (p + n.length);
+      if (gap >= 0 && gap < bestGap) { bestGap = gap; best = n; }
+    }
+    if (best) return { name: best, phrase: t[1] };
+  }
+  return null;
+}
+
+/* ── 時間跳躍 → 轉場提示 ──
+   小說常一句話跨十年（「十五年前」「第二天」「後來」）。
+   這在鏡頭表上是導演必須交代的轉場，不處理就會前後鏡接不起來。 */
+const TIME_JUMP = [
+  ['十年前', '時間跳躍：轉為回憶質感，色調褪色、邊緣柔焦'],
+  ['十五年前', '時間跳躍：轉為回憶質感，色調褪色、邊緣柔焦'],
+  ['五年前', '時間跳躍：轉為回憶質感'],
+  ['年前', '時間跳躍：轉為回憶質感，色調與服裝改變'],
+  ['年後', '時間跳躍：推進到之後的時間'],
+  ['小時候', '回憶質感：明亮柔焦'],
+  ['後來', '時間推進：光影與陳設改變'],
+  ['第二天', '時間推進：換成隔日的光線'],
+  ['隔天', '時間推進：換成隔日的光線'],
+  ['三天前', '時間跳躍：回溯到三天前'],
+  ['昨天晚上', '時間跳躍：回溯至昨夜'],
+  ['那時候', '回憶質感：與現在的畫面做出區隔'],
+  ['十年來', '時間蒙太奇：同一空間、不同年份堆疊'],
+  ['個月後', '時間推進：季節與光線改變'],
+  ['第八天', '時間推進：日子跳躍'],
+  ['就在', '時間推進：切入關鍵時刻']
+];
+
+/* 第一人稱直接對讀者說話 → 直視鏡頭（打破第四面牆），
+   這是第一人稱推理小說的招牌手法，值得變成明確的鏡頭指示。 */
+const ADDRESS_RE = /你[怎麼會知覺想想說]|你知道|你說呢|你以為|你可以想像/;
+
+/* ── 時間／天候／光線 → 打光寫法 ── */
+const LIGHT_PHRASES = [
+  ['清晨', '清晨薄霧，冷調微光'], ['早上', '晨光斜入'], ['中午', '正午頂光，硬陰影'],
+  ['下午', '午後斜陽，長影'], ['黃昏', '黃昏橘紅逆光'], ['傍晚', '暮色漸暗'],
+  ['晚上', '夜間，昏黃燈光'], ['夜晚', '夜間，昏黃燈光'], ['深夜', '深夜，單一光源'],
+  ['月光', '月光清冷'], ['燈', '暖黃燈光'],
+  ['雨', '雨中，地面反光'], ['風', '風吹動衣物'], ['霧', '薄霧，能見度低'],
+  ['陰影', '濃重陰影，臉部半沒入暗處'], ['陰暗', '光線昏暗，高對比'],
+  ['血', '暗紅血跡'], ['香火', '香煙繚繞'],
+  ['山城', '山城街景'], ['都市', '都市街景']
+];
+
+/* ── 物件 → 特寫提示（推理小說的關鍵物證要看得清楚）── */
+const OBJ_CLOSEUP = ['蝴蝶標本', '報紙', '相片', '照片', '信件', '紙條', '鑰匙', '刀', '酒杯', '錶',
+  '農藥', '香火錢', '相機', '腳踏車', '卷宗', '檔案', '藥', '手槍'];
+
+/* ── 名詞 → 插入鏡（抽象敘述句也要有畫面可拍）── */
+const NOUN_VISUALS = [
+  ['晚飯', '餐桌上的飯菜與碗筷'], ['吃飯', '餐桌上的飯菜與碗筷'], ['飯', '餐桌上的飯菜'],
+  ['酒', '酒瓶與酒杯'], ['茶', '茶杯冒著熱氣'], ['菸', '煙霧繚繞'],
+  ['報紙', '攤開的報紙'], ['相片', '手中的相片'], ['照片', '手中的相片'],
+  ['蝴蝶標本', '蝴蝶標本特寫'], ['標本', '蝴蝶標本特寫'], ['蝴蝶', '蝴蝶飛舞的畫面'],
+  ['農藥', '倒在一旁的農藥瓶'], ['香火錢', '香爐與香火錢'], ['香火', '香煙繚繞的香爐'],
+  ['城隍廟', '廟宇屋簷與香爐'], ['花叢', '花叢與草葉的細部'],
+  ['腳踏車', '停在騎樓的腳踏車'], ['房子', '工地與未完工的房舍'], ['地皮', '空地與圍籬'],
+  ['相機', '舉起的相機'], ['錢', '成疊鈔票'], ['生意', '店鋪與貨架'],
+  ['警察', '警車燈光閃爍'], ['大學', '校園建築與樹影']
+];
+
+/* ── 場景類型 → 環境一句話 ── */
+const PLACE_FLAVOR = {
+  '室內': '室內空間，牆面與陳設交代清楚',
+  '室外': '戶外環境，空間層次分明'
+};
+
+/* 在字串中找出「當主體用」的名字（跳過「父親的合夥人」這種修飾用法） */
+function subjectName(chunk, names) {
+  let who = '', best = 0, bestAt = -1;
+  for (const n of names) {
+    let c = 0, at = -1;
+    for (let k = chunk.indexOf(n); k >= 0; k = chunk.indexOf(n, k + 1)) {
+      if (chunk[k + n.length] === '的') continue;   /* 修飾用法不當主體 */
+      c++;
+      if (at < 0) at = k;
+    }
+    /* 同分時取最早出現的 —— 一個鏡頭合併兩句時，先講的人通常是主體 */
+    if (c > best || (c === best && c > 0 && at >= 0 && (bestAt < 0 || at < bestAt))) {
+      best = c; who = n; bestAt = at;
+    }
+  }
+  return who;
+}
+
+/* 這一段最後點名的角色（給下一段的代名詞回指用） */
+function lastMentioned(chunk, names) {
+  let name = '', at = -1;
+  for (const n of names) {
+    const k = chunk.lastIndexOf(n);
+    if (k > at) { at = k; name = n; }
+  }
+  return name;
+}
+
+/* ── ①人物描述草稿 ──
+   小說不會描述長相。能從文字推出來的是身份／年齡／氣質，
+   長相一律留成明確的待補欄位 —— 不亂編，編錯了會鎖錯臉。 */
+function contextsOf(text, word, span) {
+  const out = [];
+  for (let k = text.indexOf(word); k >= 0 && out.length < 6; k = text.indexOf(word, k + 1)) {
+    out.push(text.slice(Math.max(0, k - span), Math.min(text.length, k + word.length + span)));
+  }
+  return out.join('｜');
+}
+
+function draftPersonDesc(p, text, narrator, genders) {
+  const bits = [];
+  const g = (genders && genders[p.name]) || genderOf(p) || nameGender(p.name);
+  bits.push(g === 'f' ? '女性' : g === 'm' ? '男性' : '（性別待補）');
+  const near = contextsOf(text, p.name, 12);
+  const age = ['老年', '中年', '年輕', '少年', '少女'].find(function (k) { return near.indexOf(k) >= 0; });
+  if (age) bits.push(age);
+  const job = ROLE_WORDS.find(function (w) {
+    return w !== p.name && !FAMILY_WORDS.has(w) && near.indexOf(w) >= 0;
+  });
+  if (p.role) bits.push(p.role);
+  else if (job) bits.push(job);
+  const trait = TRAIT_PHRASES.find(function (t) { return near.indexOf(t[0]) >= 0; });
+  if (trait) bits.push(trait[1].split('，')[0]);
+  if (narrator && narrator.name === p.name) bits.push('第一人稱敘述者');
+  return bits.join('、') + '。（待補：髮型、臉型、固定服裝、辨識記憶點）';
+}
+
+/* ── ②場景描述草稿 ──
+   場景可以從文中線索推：地名、時間感、材質。 */
+function draftSceneDesc(pl, text) {
+  const around = contextsOf(text, pl.name, 22);
+  const bits = [];
+  const t = TIME_JUMP.find(function (x) { return around.indexOf(x[0]) >= 0; });
+  const era = ['日式', '老式', '舊', '新建', '水泥', '木造', '磚'].find(function (k) { return around.indexOf(k) >= 0; });
+  bits.push(pl.name);
+  if (pl.type) bits.push(pl.type);
+  if (era) bits.push(era);
+  if (around) {
+    const seg = around.split(/[｜，。、（）：]/).filter(function (s) { return s.indexOf(pl.name) >= 0 && s.length <= 18; })[0];
+    if (seg) bits.push('文中線索：' + seg.trim());
+  }
+  return bits.join('，') + '。（待補：建材、光線、季節、陳設細節）';
+}
+
+/* ── 主判斷：這一段畫面裡「誰、在做什麼、什麼光」→ 第③段 ── */
+function visualize(chunk, ctx) {
+  const size = ctx.size || '中景';
+  const hit = function (list) { return list.find(function (x) { return chunk.indexOf(x[0]) >= 0; }); };
+  const face = hit(FACE_PHRASES);
+  const acts = ACTION_PHRASES.filter(function (x) { return chunk.indexOf(x[0]) >= 0; }).slice(0, 2);
+  const light = hit(LIGHT_PHRASES);
+  const obj = OBJ_CLOSEUP.find(function (k) { return chunk.indexOf(k) >= 0; });
+  const noun = hit(NOUN_VISUALS);
+  const trait = ctx.trait || traitSubject(chunk, ctx.names || []);
+  const jump = hit(TIME_JUMP);
+  const addr = ADDRESS_RE.test(chunk);
+  const crowd = /大家|眾人|兩人|一群人|所有人|他們/.test(chunk);
+  const place = ctx.places.filter(function (p) { return chunk.indexOf(p.name) >= 0; })[0];
+  const parts = [];
+
+  /* ①主體：只寫畫面看得到的（whoFrom 是給介面看的判斷依據，不進 prompt） */
+  const subject = trait ? trait.name : ctx.who;
+  if (subject) {
+    let s = subject;
+    if (trait) s += '，' + trait.phrase;
+    else if (face) s += '，' + face[1];
+    if (acts.length) s += '，' + acts.map(function (a) { return a[1]; }).join('、');
+    else if (crowd) s += '，與旁人同框的群像';
+    else if (!face) s += '，' + size + '反應鏡頭';
+    parts.push(s);
+  }
+  if (place) parts.push(place.name + '：' + (PLACE_FLAVOR[place.type] || '環境交代'));
+  if (obj) parts.push(obj + '特寫，清楚可辨');
+  else if (noun && !ctx.who) parts.push(noun[1] + '（插入鏡）');
+  if (light) parts.push(light[1]);
+  if (jump) parts.push(jump[1]);
+  if (addr) parts.push('（對讀者說話）直視鏡頭');
+
+  if (!parts.length) {
+    /* 真的沒有可視線索（純抽象敘述）—— 誠實給建議，不要硬掰出畫面 */
+    return '（敘述句，無明確動作）建議用' + size + '空景，或延續上一鏡畫面';
+  }
+  let out = parts.join('；');
+  if (out.length > 80) out = out.slice(0, 80);
+  return out;
+}
+
 /* 主分析：文字 → { persons, places, shots, stats } */
 function analyzeNovel(rawText, opt) {
   const text = normalizeNovel(rawText);
   const wpm = num(S.meta.wpm, 260) || 260;
   const secPerShot = opt.secPerShot, target = Math.max(8, Math.round(wpm / 60 * secPerShot));
-  const persons = extractPersons(text, opt.maxChars);
+  const personPack = extractPersons(text, opt.maxChars);
+  const persons = personPack.persons;
+  /* 第一人稱：主角可能只在「我叫X」出現一次，後面全是「我」 */
+  const narrator = detectNarrator(text, persons, personPack.intro);
+  const genders = inferGenders(text, persons);
   const places = extractPlaces(text, opt.maxScenes);
 
   const sents = splitSentences(text);
@@ -1163,7 +1491,8 @@ function analyzeNovel(rawText, opt) {
   const chunks = [];
   for (const m of merged) {
     for (const p of (m.length > target * 1.8 ? hardSplit(m, target) : [m])) {
-      if (p.trim()) chunks.push(p.trim());
+      /* 純標點的碎片（切句留下的「。」）不該變成一個鏡頭 */
+      if (p.trim() && /[\u4e00-\u9fffA-Za-z0-9]/.test(p)) chunks.push(p.trim());
     }
   }
 
@@ -1176,6 +1505,7 @@ function analyzeNovel(rawText, opt) {
      結果「臥室」在故事中段才出現，前面幾十個鏡頭卻全被標成臥室。
      角色的規則是不猜（猜錯會鎖錯臉），場景同理：沒提到就留空。 */
   let curScene = '';
+  let lastName = '';   /* 前文最後被點名的角色，給「他／她」回指 */
   chunks.forEach((chunk, i) => {
     const isDialogue = chunk.indexOf('「') >= 0 || chunk.indexOf('『') >= 0;
     /* 場景：這一段提到哪個場景就切過去 */
@@ -1183,14 +1513,35 @@ function analyzeNovel(rawText, opt) {
     for (const p of places) if (chunk.indexOf(p.name) >= 0) { hitScene = p.name; break; }
     if (hitScene) curScene = hitScene;   /* 場景一旦出現就一直沿用到下一個場景 */
 
-    /* 角色：這一段出現最多次的名字。
-       找不到就留空，不沿用上一個鏡頭 —— 猜錯會鎖錯臉，
-       空著讓使用者在③鏡頭表指定是安全的。 */
-    let who = '', best = 0;
-    for (const n of nameRe) {
-      const c = chunk.split(n).length - 1;
-      if (c > best) { best = c; who = n; }
+    /* ── 角色判斷（愈前面愈優先）──
+       ① 明確點名：這一段最多、且不是「X的合夥人」這種修飾用法
+       ② 「我」＝敘述者：第一人稱小說的主角，不處理就全程缺席
+       ③ 「他／她」＝前文最近點名的角色（代名詞回指）
+       都判斷不出來才留空 —— 留空是安全的，猜錯會鎖錯臉。 */
+    const trait = traitSubject(chunk, nameRe);
+    const named = subjectName(chunk, nameRe);
+    const woAt = chunk.search(/(?<!其)我/);          /* 「其他」不算 */
+    const nameAt = named ? chunk.indexOf(named) : -1;
+    let who = '', whoFrom = '';
+    /* 氣質詞直接黏在某個名字後面（「合夥人看起來忠厚老實」）＝最強證據，
+       比「這一段出現最多次」更可靠，優先採用。 */
+    if (trait) { who = trait.name; whoFrom = '氣質詞'; }
+    else if (named && (woAt < 0 || (nameAt >= 0 && nameAt <= woAt))) { who = named; whoFrom = '點名'; }
+    else if (woAt >= 0 && narrator.name) { who = narrator.name; whoFrom = '我＝敘述者'; }
+    else if (named) { who = named; whoFrom = '點名'; }
+    else if (/(?<!其)[他她]/.test(chunk) && lastName) {
+      /* 用「他」還是「她」決定性別期望；性別對不上就不要硬套
+         （原本寫成「她出現且他沒出現才要 f」，導致「他」完全不受性別檢查，
+          「母親」就被當成「他」所指的人）。 */
+      const hasF = chunk.indexOf('她') >= 0, hasM = /(?<!其)他/.test(chunk);
+      const want = (hasF && !hasM) ? 'f' : (hasM && !hasF ? 'm' : '');
+      const cand = persons.filter(p => p.name === lastName)[0];
+      const g = (genders && genders[lastName]) || (cand ? genderOf(cand) : '');
+      if (!want || !g || want === g) { who = lastName; whoFrom = '代名詞'; }
     }
+    /* 更新回指對象：這一段最後點名的人 */
+    const mention = lastMentioned(chunk, nameRe);
+    if (mention) lastName = mention;
     const size = guessSize(chunk, isDialogue);
     const prevScene = i > 0 ? shots[shots.length - 1]._scene : '';
     let move;
@@ -1201,15 +1552,22 @@ function analyzeNovel(rawText, opt) {
     const chars = chunk.replace(/\s/g, '').length;
     const dur = Math.min(8, Math.max(2, Math.round(chars / wpm * 60 * 10) / 10));
     shots.push({
-      narr: chunk, size, move, dur, lens: seedLens(chunk, size, move),
-      _who: who, _scene: curScene, _chars: chars
+      narr: chunk, size, move, dur,
+      lens: visualize(chunk, { who: who, whoFrom: whoFrom, size: size, places: places, names: nameRe, trait: trait }),
+      _who: who, _whoFrom: whoFrom, _scene: curScene, _chars: chars
     });
   });
 
   const totalChars = shots.reduce((a, s) => a + s._chars, 0);
   const totalDur = shots.reduce((a, s) => a + s.dur, 0);
   return {
-    persons, places, shots, wpm, secPerShot,
+    persons: persons.map(function (p) {
+      p.descDraft = draftPersonDesc(p, text, narrator, genders); return p;
+    }),
+    places: places.map(function (p) {
+      p.descDraft = draftSceneDesc(p, text); return p;
+    }),
+    shots, wpm, secPerShot, narrator,
     stats: {
       chars: text.length, shots: shots.length, totalChars,
       totalDur, charsPerMin: wpm,
@@ -1938,7 +2296,7 @@ function renderNovelReport(r) {
       '<div style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 12px;' +
       'margin-bottom:7px;font-size:.85rem">' +
       '<b style="color:var(--gold)">#' + (i + 1) + '</b> ' + x.size + '／' + x.move + '／' + x.dur + 's' +
-      (x._who ? '　角色：<b>' + esc(x._who) + '</b>' : '') +
+      (x._who ? '　角色：<b>' + esc(x._who) + '</b>' + (x._whoFrom ? '（' + esc(x._whoFrom) + '）' : '') : '') +
       (x._scene ? '　場景：<b>' + esc(x._scene) + '</b>' : '') +
       '<div style="margin-top:3px">' + esc(x.narr.slice(0, 64)) + '…</div>' +
       '<div style="color:var(--dim);margin-top:2px;font-size:.78rem">第③段草稿：' + esc(x.lens) + '</div></div>'
@@ -1957,11 +2315,13 @@ function applyNovel() {
   const cid = {}, sid = {};
   S.chars = r.persons.map(p => {
     const id = uid('c'); cid[p.name] = id;
-    return { id: id, name: p.name, role: p.role || '', desc: '', ref: '', face: .85, body: .5 };
+    /* 描述草稿直接填進去（能從文字推的推好，長相留「待補」欄位），
+       使用者只要補長相，不用從空白開始寫。 */
+    return { id: id, name: p.name, role: p.role || '', desc: p.descDraft || '', ref: '', face: .85, body: .5 };
   });
   S.scenes = r.places.map(p => {
     const id = uid('s'); sid[p.name] = id;
-    return { id: id, name: p.name, type: p.type, desc: '', ref: '', body: .65 };
+    return { id: id, name: p.name, type: p.type, desc: p.descDraft || '', ref: '', body: .65 };
   });
   S.shots = r.shots.map((x, i) => ({
     id: 'S' + String(i + 1).padStart(3, '0'),

@@ -298,6 +298,51 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(guessStyle('霓虹燈下，義體人與機器人走過全息看板。', '') === '賽博龐克', '賽博題材判賽博龐克');
   ok(guessStyle('隨便一段文字', '黑色電影') === '黑色電影', '使用者指定畫風時以指定為準');
 
+  console.log('\n=== 14. 判斷層：敘述者／代名詞／視覺描述 ===');
+  const jp = '我叫鄭木貴，我不是本地人。我望著窗外，心裡很慌亂。'
+    + '父親走進屋裡，神情沮喪。母親抱著我放聲大哭。'
+    + '父親的合夥人看起來忠厚老實，合夥人笑得很大聲。'
+    + '有一次，母親先離開，留下他一個人在屋裡。\n';
+  const rj = analyzeNovel(jp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+
+  ok(rj.narrator && rj.narrator.name === '鄭木貴', '「我叫鄭木貴」認出第一人稱敘述者',
+    JSON.stringify(rj.narrator));
+  const narratorShots = rj.shots.filter(s => s._whoFrom === '我＝敘述者');
+  ok(narratorShots.length > 0, '含「我」的鏡頭對應到敘述者（原本全空）', narratorShots.length + ' 鏡');
+
+  ok(rj.shots.some(s => s._who === '合夥人' && /忠厚老實/.test(s.narr)),
+    '「父親的合夥人」的主體是合夥人，不是被修飾的父親',
+    rj.shots.filter(s => /合夥人/.test(s.narr)).map(s => s._who + '←' + s.narr).join('｜'));
+
+  const woShots = rj.shots.filter(s => /我/.test(s.narr) && s._who === '鄭木貴');
+  ok(woShots.length > 0, '「我」＝敘述者的鏡頭有鎖到人', woShots.length + ' 鏡');
+
+  /* 代名詞性別不符時寧可留空，不可硬套到錯的人身上 */
+  const wrongGender = rj.shots.filter(s => s._whoFrom === '代名詞' && /(?<!其)他/.test(s.narr) && s._who === '母親');
+  ok(wrongGender.length === 0, '「他」不會被套到女性角色身上',
+    wrongGender.map(s => s.narr).join('｜'));
+
+  const lensTexts = rj.shots.map(s => s.lens).join('｜');
+  ok(/眉間緊鎖|眼眶泛淚|嘴角/.test(lensTexts), '情緒詞轉成臉部畫面', lensTexts.slice(0, 90));
+  ok(/推門進屋|走出畫面|反應鏡頭/.test(lensTexts), '動作詞轉成鏡頭指示', '');
+  ok(!/\(點名\)|\(我＝敘述者\)|\(代名詞\)/.test(lensTexts),
+    '內部判斷標籤不會漏進 prompt（只在介面顯示）', '');
+  ok(rj.shots.every(s => s.lens && s.lens.trim()), '每一鏡的第③段都不是空的',
+    rj.shots.filter(s => !s.lens || !s.lens.trim()).length + ' 鏡空白');
+  ok(rj.shots.every(s => /[\u4e00-\u9fffA-Za-z0-9]/.test(s.narr)),
+    '不會產生只有標點的碎片鏡頭', '');
+
+  console.log('\n=== 15. ①人物／②場景描述草稿 ===');
+  ok(rj.persons.every(p => p.descDraft && p.descDraft.length > 6),
+    '每個人物都有描述草稿', rj.persons.map(p => p.name + ':' + p.descDraft.length).join(' '));
+  const father = rj.persons.find(p => p.name === '父親');
+  ok(father && /男性/.test(father.descDraft), '角色詞推出性別（父親→男性）', father && father.descDraft);
+  ok(father && /待補/.test(father.descDraft), '長相明確標成待補，不亂編', '');
+  const nb = rj.persons.find(p => p.name === '鄭木貴');
+  ok(nb && /第一人稱敘述者/.test(nb.descDraft), '敘述者被標記出來', nb && nb.descDraft);
+  ok(rj.places.every(p => p.descDraft), '每個場景都有描述草稿',
+    rj.places.map(p => p.name).join('／'));
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
