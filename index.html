@@ -89,10 +89,11 @@ footer a{text-decoration:none}
 </div></section>
 
 <section><div class="wrap">
-  <h2>六個分頁，六份文件</h2>
+  <h2>七個分頁，六份文件</h2>
   <p class="lead">工具的每個分頁對應一份製作文件。</p>
   <table>
     <tr><th>分頁</th><th>文件</th><th>用途</th></tr>
+    <tr><td>📖 匯入小說</td><td>—</td><td>吃 .txt／.md／.html／.docx，自動產生人物、場景、鏡頭表草稿</td></tr>
     <tr><td>① 人物</td><td>Character Sheet</td><td>角色參考圖、參考強度、固定描述字串</td></tr>
     <tr><td>② 場景</td><td>Scene Sheet</td><td>場景參考圖、空間結構鎖定</td></tr>
     <tr><td>③ 鏡頭表</td><td>Shot List</td><td><b style="color:var(--gold)">核心</b> — 景別、運鏡、時長、prompt</td></tr>
@@ -110,6 +111,8 @@ footer a{text-decoration:none}
       <p>遠景 0.30 / 中景 0.85 / 特寫 0.90，依景別自動帶入。</p></div>
     <div class="card"><div class="num">TIMING</div><h3>字數換算單元數</h3>
       <p>260 字/分鐘，自動估算總長度、該切幾個單元、每格幾秒。</p></div>
+    <div class="card"><div class="num">IMPORT</div><h3>匯入小說原稿</h3>
+      <p>丟進 .txt／.md／.html／.docx，自動抽出人物、場景、鏡頭表與畫風。編碼 Big5／GBK／UTF-16 自動判別，全程不連網。</p></div>
     <div class="card"><div class="num">EXPORT</div><h3>四種匯出</h3>
       <p>TXT 貼進生成工具、CSV 管進度、MD 存檔、JSON 備份。</p></div>
   </div>
@@ -119,7 +122,7 @@ footer a{text-decoration:none}
   <h2>離線保證</h2>
   <p class="lead">使用者要求，也是硬性約束。</p>
   <ul>
-    <li><b>單一檔案</b> — HTML + CSS + JS 全內嵌在 <code>storyboard.html</code>，38KB。</li>
+    <li><b>單一檔案</b> — HTML + CSS + JS 全內嵌在 <code>storyboard.html</code>，71KB。</li>
     <li><b>完全離線</b> — 無 CDN、無框架、無 <code>fetch</code>，全部原生 Web API。</li>
     <li><b>雙擊即用</b> — 直接開 <code>file://</code> 就能跑，不需安裝或架伺服器。</li>
     <li><b>相容性處理</b> — Safari 在 <code>file://</code> 封鎖 localStorage 時自動退回記憶體並提示備份；

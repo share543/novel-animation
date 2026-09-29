@@ -118,6 +118,7 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
 
 <nav class="tabs">
   <button class="on" data-p="dash">總覽</button>
+  <button data-p="novel">📖 匯入小說</button>
   <button data-p="char">① 人物</button>
   <button data-p="scene">② 場景</button>
   <button data-p="shot">③ 鏡頭表</button>
@@ -167,6 +168,59 @@ code.pp{font-family:ui-monospace,monospace;font-size:.78rem;line-height:1.5;disp
     <div class="stat"><b id="s-3">0</b><span>平均鏡頭長</span></div>
   </div>
   <div class="note" id="conv"></div>
+</div>
+
+<!-- ═══ 匯入小說 ═══ -->
+<div class="panel" id="p-novel">
+  <h2 class="sec">從小說產生專案</h2>
+  <div class="note">
+    支援 <b>.txt</b>／<b>.md</b>／<b>.html</b>／<b>.docx</b>（含繁體 Big5、簡體 GBK 自動判別）。
+    <b>全部在你的瀏覽器裡分析，不上傳到任何地方</b> —— 這個工具沒有任何連網功能。<br>
+    自動產出 <b>人物</b>、<b>場景</b>、<b>鏡頭表</b>、<b>畫風提示詞</b> 的<b>草稿</b>。
+    人物與場景的「描述字串」必須自己填，那才是鎖臉／鎖場景的關鍵。
+  </div>
+
+  <div class="grid c2">
+    <div class="f">
+      <label>選擇小說檔</label>
+      <button class="btn" onclick="document.getElementById('nf').click()">📂 選檔（.txt／.md／.html／.docx）</button>
+      <input type="file" id="nf" accept=".txt,.md,.markdown,.html,.htm,.docx" style="display:none" onchange="loadNovelFile(event)">
+      <small id="nf-file">尚未選檔</small>
+    </div>
+    <div class="f">
+      <label>畫風（第④段）</label>
+      <select id="nf-style">
+        <option value="">自動判斷（依題材）</option>
+        <option>寫實電影感</option><option>黑色電影</option>
+        <option>日系動畫</option><option>賽博龐克</option>
+      </select>
+      <small>之後可在④畫風/提示詞微調</small>
+    </div>
+  </div>
+
+  <div class="f" style="margin-top:var(--g)">
+    <label>或直接貼上小說內容</label>
+    <textarea id="nf-text" rows="9" placeholder="把小說全文貼在這裡，或按上面的按鈕選檔…"></textarea>
+  </div>
+
+  <div class="grid c3" style="margin-top:var(--g)">
+    <div class="f"><label>每鏡秒數</label>
+      <input type="number" id="nf-sec" value="4" min="2" max="10" step="0.5">
+      <small>依旁白語速換算每鏡字數</small></div>
+    <div class="f"><label>最多人物</label>
+      <input type="number" id="nf-chars" value="8" min="1" max="20"></div>
+    <div class="f"><label>最多場景</label>
+      <input type="number" id="nf-scenes" value="6" min="1" max="12">
+      <small>偵探短篇通常 3–6 個</small></div>
+  </div>
+
+  <div style="margin-top:var(--g);display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn p" onclick="runAnalyze()">🔍 分析並產生草稿</button>
+    <button class="btn" id="nf-apply" style="display:none" onclick="applyNovel()">✅ 套用到專案</button>
+  </div>
+
+  <div id="nf-msg"></div>
+  <div id="nf-report"></div>
 </div>
 
 <!-- ═══ 人物 ═══ -->
@@ -590,9 +644,35 @@ function exportJSON(){ dl('novel-project.json', JSON.stringify(S,null,2), 'appli
 function importJSON(e){
   const f=e.target.files[0]; if(!f)return;
   const r=new FileReader();
-  r.onload=()=>{ try{ S=JSON.parse(r.result); syncForm(); renderAll(); renderChars(); renderScenes(); alert('匯入成功'); }
-    catch(err){ alert('檔案格式錯誤'); } };
-  r.readAsText(f); e.target.value='';
+  r.onload=()=>{
+    let o;
+    try{ o=JSON.parse(r.result); }
+    catch(err){ alert('匯入失敗：這不是有效的 JSON 檔。\n\n要匯入小說原稿，請用「📖 匯入小說」分頁（支援 .txt／.md／.html／.docx）。'); e.target.value=''; return; }
+    /* 先驗證形狀，通過才指派 S。
+       舊寫法是 S=JSON.parse(...)，只要後面的 syncForm 一拋錯，
+       S 就已被壞物件汙染 —— 再按「儲存」會把壞資料寫進 localStorage。 */
+    if(!o||typeof o!=='object'||Array.isArray(o)||!o.meta||typeof o.meta!=='object'
+       ||!Array.isArray(o.chars)||!Array.isArray(o.scenes)||!Array.isArray(o.shots)){
+      alert('匯入失敗：這不是本工具「備份」下載的專案檔。\n\n要匯入小說原稿，請用「📖 匯入小說」分頁。');
+      e.target.value=''; return;
+    }
+    const broken=a=>a.some(x=>!x||typeof x!=='object'||typeof x.id!=='string'||!x.id);
+    if(broken(o.chars)||broken(o.scenes)||broken(o.shots)){
+      alert('匯入失敗：人物／場景／鏡頭表有缺少 id 的項目，檔案可能損壞。');
+      e.target.value=''; return;
+    }
+    const b=blank();
+    S={ meta:Object.assign(b.meta,o.meta),
+        style:typeof o.style==='string'?o.style:b.style,
+        styleEn:typeof o.styleEn==='string'?o.styleEn:'',
+        neg:typeof o.neg==='string'?o.neg:b.neg,
+        chars:o.chars, scenes:o.scenes, shots:o.shots };
+    syncForm(); renderAll(); renderChars(); renderScenes();
+    alert('匯入成功：'+S.chars.length+' 個人物、'+S.scenes.length+' 個場景、'+S.shots.length+' 個鏡頭。');
+    e.target.value='';
+  };
+  r.onerror=()=>{ alert('檔案讀取失敗'); e.target.value=''; };
+  r.readAsText(f);
 }
 function exportCSV(){
   const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
@@ -635,6 +715,595 @@ function copyAll(){
     if(ok) alert('已複製到剪貼簿（'+S.shots.length+' 個 prompt）。');
     else { promptView(); alert('此瀏覽器不允許自動複製，請從提示框手動選取。'); }
   }
+}
+
+/* ═══════════ 小說匯入（純離線：讀檔 → 抽取 → 產生專案） ═══════════
+   支援 .txt / .md / .html / .docx，全部用瀏覽器原生 API，無任何外部函式庫。
+   .docx 用 DecompressionStream('deflate-raw') 解 ZIP，不需要 JSZip 之類的套件。 */
+
+/* 畫風預設（第④段）。DEF_STYLE 仍是預設值，不動。 */
+const STYLE_PRESETS = {
+  '寫實電影感': DEF_STYLE,
+  '黑色電影': '黑色電影風格，高對比硬光，濃重陰影，雨夜霓虹反光，低飽和冷色調，35mm 膠片顆粒，復古質感，電影感構圖',
+  '日系動畫': '日系動畫賽璐璐風格，乾淨線條，柔和漸層，明亮通透色調，細膩背景美術，動畫電影感',
+  '賽博龐克': '賽博龐克風格，霓虹燈光，濕潤街面反光，紫青對比色，未來都市景觀，體積光，電影級構圖'
+};
+const GENRE_RULES = [
+  [/賽博|義體|晶片|人工智慧|機器人|霓虹|全息/, '賽博龐克'],
+  [/校園|高中|社團|青春|學姊|學長|畢業/, '日系動畫'],
+  [/偵探|推理|命案|兇手|線索|證據|密室|不在場證明|驗屍/, '黑色電影'],
+  [/黑幫|走私|子彈|幫派|交易|老大/, '黑色電影']
+];
+
+/* 職稱：偵探小說常用「偵探說」「警官問」，這些也能當角色。 */
+const ROLE_WORDS = ['偵探', '警探', '警官', '警察', '刑警', '員警', '法醫', '醫生', '護士', '律師', '檢察官',
+  '助手', '秘書', '老闆', '經理', '管家', '司機', '學生', '老師', '教授', '店員', '服務生', '酒保',
+  '鄰居', '房東', '記者', '隊長', '組長', '船長', '保鑣', '殺手', '小偷', '嫌犯', '證人', '目擊者',
+  '警衛', '郵差', '清潔工', '工人', '農夫', '漁夫', '畫家', '作家', '鋼琴家', '店長', '櫃檯'];
+
+/* 地點詞庫：命中即視為場景。涵蓋現代與古代（公案／武俠）題材。 */
+const PLACE_WORDS = {
+  '室內': ['事務所', '辦公室', '客廳', '臥室', '書房', '廚房', '浴室', '走廊', '樓梯', '玄關', '房間',
+    '會議室', '實驗室', '手術室', '牢房', '地下室', '閣樓', '倉庫', '酒窖', '店裡', '屋內', '車廂',
+    '包廂', '酒吧', '咖啡廳', '咖啡館', '餐廳', '旅館', '飯店', '醫院', '教室', '圖書館', '警局', '檔案室',
+    '衙門', '縣衙', '公堂', '大堂', '後堂', '廳堂', '偏廳', '內室', '廂房', '帳房', '庫房', '柴房', '灶房',
+    '馬房', '客棧', '酒樓', '茶館', '客廳裡', '正殿', '偏殿', '祠堂', '廟裡', '古廟', '破廟', '山神廟',
+    '繡樓', '閨房', '學堂', '衙內', '牢裡', '獄中'],
+  '室外': ['門口', '大門', '陽台', '院子', '花園', '街道', '巷子', '馬路', '車站', '月台', '碼頭', '港口',
+    '機場', '橋上', '河邊', '海邊', '森林', '山頂', '墓園', '教堂', '寺廟', '廣場', '公園', '停車場',
+    '屋頂', '天臺', '街角', '校門', '市場', '田埂', '工地', '岸邊',
+    '街市', '巷口', '橋頭', '城門', '渡口', '河岸', '山坡', '樹林', '曠野', '墳場', '義莊', '後院',
+    '衙門口', '路口', '田間', '溪邊', '井邊', '山腳', '郊外', '野外']
+};
+const PLACE_ALL = PLACE_WORDS['室內'].concat(PLACE_WORDS['室外']);
+const PLACE_TYPE = {};
+PLACE_WORDS['室內'].forEach(w => PLACE_TYPE[w] = '室內');
+PLACE_WORDS['室外'].forEach(w => PLACE_TYPE[w] = '室外');
+
+/* 中文姓名過濾：姓氏 + 名，或 阿／小／老 + 字。 */
+const SURNAMES = new Set(('王李張劉陳楊黃趙吳周徐孫馬朱胡郭何高林羅鄭梁謝宋唐許韓馮鄧曹彭曾蕭田董袁潘于蔣蔡余杜葉程蘇魏呂丁任沈姚盧姜崔鍾譚陸汪范金石廖賈夏韋付方白鄒孟熊秦邱江尹薛段雷侯龍史陶黎賀顧毛郝龔邵萬錢嚴賴覃洪武莫孔湯向常溫康施文牛樊葛邢安齊易喬伍龐顏倪莊聶章魯岳翟殷詹申歐耿關蘭焦俞左柳甘祝包寧尚符舒阮柯紀梅童凌畢單季裴霍涂成苗谷盛曲翁冉駱藍路游辛靳狄海昌郎尉岑戚樓簡練榮繆路畢樂薛').split(''));
+const SURNAMES2 = ['歐陽', '司馬', '諸葛', '上官', '東方', '皇甫', '尉遲', '公孫', '慕容', '司徒', '令狐',
+  '宇文', '長孫', '獨孤', '南宮', '西門', '夏侯', '呼延', '赫連', '聞人'];
+const NAME_PREFIX = new Set(('阿小老').split(''));
+
+/* 常被誤判成名字的常用詞。
+   ⚠️ 這裡必須是「詞」的陣列，不能寫成一個大字串再 split('')
+   —— split('') 會把「高聲」拆成「高」「聲」兩個單字，多字詞永遠比對不到。 */
+const NOT_NAME = new Set([
+  '他們', '我們', '你們', '她們', '自己', '這個', '那個', '什麼', '怎麼', '這樣', '那樣', '這些', '那些',
+  '只是', '還是', '已經', '沒有', '因為', '所以', '但是', '然後', '於是', '現在', '當時', '一時', '突然',
+  '終於', '東西', '事情', '地方', '時候', '聲音', '眼睛', '心裡', '身體', '背後', '旁邊', '對面', '前面',
+  '後面', '裡面', '外面', '上面', '下面', '開始', '繼續', '停下', '準備', '打算', '決定', '回答', '說道',
+  '想到', '看到', '聽到', '發現', '覺得', '知道', '記得', '有人', '每個', '一個', '兩個', '三個', '全部',
+  '所有', '大家', '別的', '另外', '同時', '接著', '最後', '首先', '而且', '不過', '如果', '雖然', '居然',
+  '竟然', '果然', '難道', '幾乎', '大概', '也許', '可能', '應該', '必須', '可以', '需要', '想要', '努力',
+  '仔細', '慢慢', '輕輕', '悄悄', '默默', '靜靜', '冷冷', '淡淡', '苦笑', '冷笑', '點頭', '搖頭', '皺眉',
+  '抬頭', '低頭', '轉身', '站起', '坐下', '走進', '走出', '走近', '離開', '回到', '拿起', '放下', '伸手',
+  '看著', '盯著', '望向', '凝視', '開口', '沉默', '嘆氣', '微笑', '大笑', '怒道', '低聲', '大聲', '小聲',
+  '問道', '答道', '甚至', '或許', '根本', '似乎', '一切', '方才', '隨即', '因此', '然而', '忽然', '頓時',
+  '瞬間', '立刻', '趕忙', '連忙', '不禁', '高聲', '高處', '高大', '高明', '高興', '高手', '向他', '向她',
+  '向他', '向他', '齊聲', '向上', '向下', '向內', '向外', '向他', '向他', '眾人', '二人', '三人', '一人',
+  '那人', '這人', '兩人', '幾人', '老兒', '老人', '老爺', '小兒', '小姐', '小心', '大半', '打聽', '大名',
+  '大夥', '大批', '大略', '大娘', '大爺', '老太太', '小時候', '左手', '右手', '心中', '口中', '手中',
+  '面上', '身上', '頭上', '腳下', '眼前', '耳邊', '向來', '向前', '向後', '立刻', '連忙', '登時', '當下',
+  '不敢', '不由', '只得', '只好', '一面', '一邊', '一時', '起身', '上前', '退後', '回來', '進來', '出來',
+  '下來', '起來', '過去', '過來', '說罷', '說畢', '言罷', '看罷', '聽罷', '想罷', '不覺', '不覺',
+  '何故', '何必', '何況', '何時', '何處', '何等', '何以', '何曾', '何嘗', '如何', '若何', '奈何',
+  '何妨', '何事', '何人', '何物', '何況', '張望', '張嘴', '張開', '陳舊', '陳年', '黃昏', '白日',
+  '白天', '白雲', '石頭', '石板', '木頭', '林子', '林間', '高興', '高明', '周到', '周全', '王法',
+  '王道', '李子', '李樹', '楊柳', '羅列', '鄭重', '梁柱', '謝天', '唐突', '許久', '許多', '蕭瑟',
+  '田地', '田地', '杜絕', '葉子', '蘇醒', '沈默', '陸地', '汪洋', '金子', '余下', '任憑', '丁點'
+]);
+
+/* 阿X／小X／老X 這種暱稱：第二字不能是這些常見字，否則「老兒」「小聲」會被當成人名。 */
+const PREFIX_BAD = new Set('兒人太師闆頭家時心聲便的了是在有大小多少東西樣麼候邊面前後上下內外'.split(''));
+
+/* 名字前面必須是這些字之一（或字串開頭），避免把長詞的尾巴當成名字
+   —— 例如「馬榮高聲罵道」不該抓出「高聲罵」。 */
+const NAME_BOUND = new Set(('，。！？：；、,.!?:;」』】）)…—「『【（( \n\t' +
+  '的與和跟對向從把被讓見問看聽給替為同是在有把將並而則但卻就也都很更最又再還只才便').split(''));
+
+function boundaryOK(prev) { return prev === '' || NAME_BOUND.has(prev); }
+
+/* 這些字可以是「名字前面」的字，但不能是名字的開頭 ——
+   否則「向狄公道」會被抓成「向狄公」（介詞被吞進名字）。 */
+const NOT_NAME_START = new Set(('向對跟和與從把被讓給替為同朝將並而則但卻就也都很更最又再還只才便是在有' +
+  '的說道問答喊叫看聽想見知要能可是的了').split(''));
+
+function looksLikeName(s) {
+  if (!/^[\u4e00-\u9fff]{2,4}$/.test(s)) return false;
+  if (NOT_NAME.has(s) || ROLE_WORDS.indexOf(s) >= 0) return false;
+  if (NOT_NAME_START.has(s[0])) return false;
+  for (const p of SURNAMES2) if (s.indexOf(p) === 0) return true;
+  if (s.length === 2) {
+    if (NAME_PREFIX.has(s[0])) return !PREFIX_BAD.has(s[1]);
+    return SURNAMES.has(s[0]);
+  }
+  if (s.length === 3) return SURNAMES.has(s[0]);
+  return false;
+}
+
+/* 對白動詞（用來找說話者）。含常見的「X道」「X說道」等。 */
+const SPEAK_VERBS = ['說道', '問道', '答道', '喝道', '叫道', '罵道', '嘆道', '怒道', '急道', '笑道',
+  '應道', '回道', '說道', '說', '道', '問', '答', '喊', '叫', '罵', '笑道', '苦笑', '冷笑',
+  '低聲', '冷冷', '淡淡', '開口', '回答', '沉吟', '解釋', '反問', '追問', '喃喃', '嘀咕'];
+
+/* 從每個動詞往前找 2–4 字，由短到長取第一個通過檢查的。
+   由短到長很重要：貪婪匹配會把「馬榮高聲罵道」抓成「高聲罵」。 */
+function extractPersons(text, limit) {
+  const cnt = new Map();
+  const bump = n => cnt.set(n, (cnt.get(n) || 0) + 1);
+  for (const v of SPEAK_VERBS) {
+    let idx = -1;
+    while ((idx = text.indexOf(v, idx + 1)) >= 0) {
+      for (let len = 2; len <= 4; len++) {
+        const start = idx - len;
+        if (start < 0) break;
+        const cand = text.slice(start, idx);
+        if (!/^[\u4e00-\u9fff]+$/.test(cand)) break;
+        if (!boundaryOK(start > 0 ? text[start - 1] : '')) break;
+        if (looksLikeName(cand)) { bump(cand); break; }
+      }
+    }
+  }
+  const names = [...cnt.entries()].map(([name, count]) => ({ name, count, role: '' }))
+    .sort((a, b) => b.count - a.count);
+  /* 職稱：出現 ≥3 次且沒被當成名字抓過，就當一個角色（偵探小說常寫「偵探說」）。 */
+  const roles = [];
+  for (const w of ROLE_WORDS) {
+    if (cnt.has(w)) continue;
+    const c = (text.split(w).length - 1);
+    if (c >= 3) roles.push({ name: w, count: c, role: w });
+  }
+  roles.sort((a, b) => b.count - a.count);
+  return names.concat(roles).slice(0, limit);
+}
+
+/* ---- 讀檔：一律先讀成 ArrayBuffer，再判斷編碼 ---- */
+function decodeText(buf) {
+  const u8 = new Uint8Array(buf);
+  if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF)
+    return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), enc: 'UTF-8 (BOM)' };
+  if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE)
+    return { text: new TextDecoder('utf-16le').decode(u8), enc: 'UTF-16LE' };
+  if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF)
+    return { text: new TextDecoder('utf-16be').decode(u8), enc: 'UTF-16BE' };
+  try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), enc: 'UTF-8' }; } catch (e) { }
+  /* 不是合法 UTF-8 → 台灣常見的 Big5 與對岸的 GBK 之間選一個最像的。
+     TextDecoder 對不支援的編碼會丟錯，一併跳過。 */
+  let best = null, bestScore = -Infinity, bestEnc = '';
+  for (const enc of ['big5', 'gbk', 'utf-8']) {
+    let t;
+    try { t = new TextDecoder(enc).decode(u8); } catch (e) { continue; }
+    const bad = (t.match(/\uFFFD/g) || []).length;
+    const cjk = (t.match(/[\u4e00-\u9fff]/g) || []).length;
+    const score = cjk - bad * 20;
+    if (score > bestScore) { bestScore = score; best = t; bestEnc = enc; }
+  }
+  return { text: best || '', enc: (bestEnc || '未知').toUpperCase() + '（自動判定）' };
+}
+
+/* .docx = ZIP，內含 word/document.xml。只解出這一個檔，其餘略過。 */
+async function docxToXml(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  let eocd = -1;
+  const floor = Math.max(0, u8.length - 66000);
+  for (let i = u8.length - 22; i >= floor; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('不是有效的 .docx（找不到 ZIP 結尾）');
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder('utf-8');
+  let entry = null;
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const cmtLen = dv.getUint16(off + 32, true);
+    const localOff = dv.getUint32(off + 42, true);
+    const name = dec.decode(u8.subarray(off + 46, off + 46 + nameLen));
+    if (name === 'word/document.xml') entry = { method, compSize, localOff };
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+  if (!entry) throw new Error('不是有效的 .docx（缺少 word/document.xml）');
+  const lhNameLen = dv.getUint16(entry.localOff + 26, true);
+  const lhExtraLen = dv.getUint16(entry.localOff + 28, true);
+  const start = entry.localOff + 30 + lhNameLen + lhExtraLen;
+  const data = u8.subarray(start, start + entry.compSize);
+  if (entry.method === 0) return dec.decode(data);
+  if (entry.method !== 8) throw new Error('這個 .docx 的壓縮方式不支援（method=' + entry.method + '）');
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).text();
+}
+
+/* 從 WordprocessingML 抽純文字：段落換行、只取 w:t 的文字。 */
+function docxXmlToText(xml) {
+  const s = xml.replace(/<w:tab\b[^>]*\/?>/g, '\t').replace(/<w:br\b[^>]*\/?>/g, '\n');
+  const paras = s.split(/<\/w:p>/);
+  const out = [];
+  for (const p of paras) {
+    let line = '';
+    const re = /<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g;
+    let m;
+    while ((m = re.exec(p))) line += m[1];
+    line = line.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/* HTML → 純文字（保留段落換行）。用 DOMParser，不引入任何套件。 */
+const BLOCK_TAGS = new Set(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre',
+  'tr', 'section', 'article', 'header', 'footer', 'table', 'ul', 'ol', 'figure', 'figcaption']);
+function htmlToText(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script,style,noscript,template,head,nav,aside').forEach(e => e.remove());
+  const walk = node => {
+    let s = '';
+    for (const n of node.childNodes) {
+      if (n.nodeType === 3) { s += n.nodeValue; continue; }
+      if (n.nodeType !== 1) continue;
+      const tag = n.tagName.toLowerCase();
+      if (tag === 'br') { s += '\n'; continue; }
+      const block = BLOCK_TAGS.has(tag);
+      s += (block ? '\n' : '') + walk(n) + (block ? '\n' : '');
+    }
+    return s;
+  };
+  const body = doc.body || doc.documentElement;
+  return body ? walk(body) : '';
+}
+
+/* 正規化：統一換行、去掉多餘空白、把分隔線與章節標題變成段落界線。 */
+/* 硬換行接回：中文 txt 常在 30 字左右斷行，不接回去的話斷句會全錯。
+   只在「這行結尾不是句末標點」且「兩邊都不是段落標記」時接起來。
+   英文單字之間要補空白，中文直接接。 */
+function joinWrapped(t) {
+  const ENDER = /[。！？…」』：；、,;:]$/;
+  const STARTER = /^\s*(第\s*[0-9一二三四五六七八九十百零〇]+\s*[章節回篇]|【|——|─|\d+[、.．]|[（(]\d+[)）]|[-*+]\s|#)/;
+  const out = [];
+  for (const ln of t.split('\n')) {
+    const i = out.length - 1;
+    const prev = i >= 0 ? out[i] : null;
+    if (prev && ln.trim() && !ENDER.test(prev) && !STARTER.test(ln) && !STARTER.test(prev)) {
+      const glue = /[A-Za-z0-9]$/.test(prev) && /^[A-Za-z0-9]/.test(ln.trim()) ? ' ' : '';
+      out[i] = prev + glue + ln.trim();
+    } else {
+      out.push(ln);
+    }
+  }
+  return out.join('\n');
+}
+
+function normalizeNovel(t) {
+  return joinWrapped(t.replace(/\r\n?/g, '\n')
+    .replace(/\uFEFF/g, '')
+    .replace(/\u3000/g, ' ')
+    .replace(/[ \t]+/g, ' '))
+    .replace(/^\s*[-—=*_#~]{3,}\s*$/gm, '\n')
+    .replace(/^\s*第\s*[0-9一二三四五六七八九十百零〇]+\s*[章節回篇]\s*.*$/gm, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/* 斷句：只在「」『』外面切，避免把一句對白切兩半。
+   英文句點也算句尾 —— 否則沒有中文標點的文字會被當成一整句，變成巨型鏡頭。 */
+function splitSentences(t) {
+  const out = [];
+  let buf = '', depth = 0;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === '「' || ch === '『') depth++;
+    else if (ch === '」' || ch === '』') depth = Math.max(0, depth - 1);
+    buf += ch;
+    const isDot = ch === '.' && /^(\s|$)/.test(t.substr(i + 1, 1));
+    if (depth === 0 && ('。！？!?…'.indexOf(ch) >= 0 || isDot || ch === '\n')) {
+      if (buf.trim()) out.push(buf.trim());
+      buf = '';
+    }
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out;
+}
+
+/* 單句過長（整段沒標點）時強制切開，否則會出現 40 秒的巨型鏡頭。 */
+function hardSplit(chunk, max) {
+  const out = [];
+  let rest = chunk;
+  while (rest.length > max) {
+    let cut = -1;
+    for (const p of ['，', '、', '；', '：', ',', ';']) {
+      const i = rest.lastIndexOf(p, max);
+      if (i > cut && i >= Math.floor(max * 0.5)) cut = i + 1;
+    }
+    if (cut < 0) cut = max;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+/* 場景：地名詞庫 + 明示標記（場景：／【】）。 */
+function extractPlaces(text, limit) {
+  const cnt = new Map();
+  const add = (n, c) => { if (n) cnt.set(n, (cnt.get(n) || 0) + (c || 1)); };
+  for (const w of PLACE_ALL) {
+    const c = (text.match(new RegExp(w, 'g')) || []).length;
+    if (c > 0) add(w, c);
+  }
+  let m;
+  const reScene = /場景\s*[：:]\s*([^\n，,。；;]{2,12})/g;
+  while ((m = reScene.exec(text))) add(m[1].trim(), 99);
+  const reBrk = /[【〖]([^】〗]{2,12})[】〗]/g;
+  while ((m = reBrk.exec(text))) add(m[1].trim(), 50);
+  return [...cnt.entries()].map(([name, count]) => ({ name, count, type: PLACE_TYPE[name] || '室外' }))
+    .sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
+/* 鏡頭景別判斷：由旁白內容推測，使用者再自己改。 */
+const SIZE_RULES = [
+  [/手指|手裡|手中|戒指|錶|門把|鑰匙|照片|信件|紙條|刀刃|血跡|檔案|手機|酒杯/, '物件'],
+  [/眼神|眼中|眼睛|嘴角|眉毛|表情|臉|臉頰|嘴唇/, '特寫'],
+  [/天空|遠方|遠處|整個|四周|全景|遠眺|望去|街|人群|全景|窗外/, '遠景'],
+  [/走進|走出|走過|穿過|來到位於|步入/, '遠景']
+];
+
+function guessSize(chunk, isDialogue) {
+  for (const [re, size] of SIZE_RULES) if (re.test(chunk)) return size;
+  if (isDialogue) return '近景';
+  return '中景';
+}
+
+const MOVE_CYCLE = ['固定', '緩慢左移', '緩慢右移', '輕微晃動'];
+
+/* 第③段（鏡頭描述）種子：從旁白取一段具體畫面，使用者再手改成視覺描述。 */
+function seedLens(chunk, size, move) {
+  let s = chunk.replace(/^[「『]/, '').replace(/[」』]$/, '').replace(/\s+/g, '');
+  const cuts = ['，', '。', '、', '；', '：'];
+  for (const c of cuts) {
+    const i = s.indexOf(c);
+    if (i >= 8 && i <= 26) { s = s.slice(0, i); break; }
+  }
+  if (s.length > 30) s = s.slice(0, 30);
+  return s;
+}
+
+/* 主分析：文字 → { persons, places, shots, stats } */
+function analyzeNovel(rawText, opt) {
+  const text = normalizeNovel(rawText);
+  const wpm = num(S.meta.wpm, 260) || 260;
+  const secPerShot = opt.secPerShot, target = Math.max(8, Math.round(wpm / 60 * secPerShot));
+  const persons = extractPersons(text, opt.maxChars);
+  const places = extractPlaces(text, opt.maxScenes);
+
+  const sents = splitSentences(text);
+  /* 合併句子成鏡頭：到達目標字數就切 */
+  const merged = [];
+  let buf = '';
+  for (const s of sents) {
+    if (!buf) { buf = s; continue; }
+    if (buf.length >= target * 0.7) { merged.push(buf); buf = s; continue; }
+    if ((buf + s).length > target * 2 && buf.length >= target * 0.5) { merged.push(buf); buf = s; continue; }
+    buf += s;
+  }
+  if (buf.trim()) merged.push(buf);
+  /* 沒有標點的長段落再強制切開，確保每鏡時長合理 */
+  const chunks = [];
+  for (const m of merged) {
+    for (const p of (m.length > target * 1.8 ? hardSplit(m, target) : [m])) {
+      if (p.trim()) chunks.push(p.trim());
+    }
+  }
+
+  const nameRe = persons.filter(p => !p.role).map(p => p.name);
+  const shots = [];
+  let curScene = places.length ? places[0].name : '';
+  chunks.forEach((chunk, i) => {
+    const isDialogue = chunk.indexOf('「') >= 0 || chunk.indexOf('『') >= 0;
+    /* 場景：這一段提到哪個場景就切過去 */
+    let hitScene = '';
+    for (const p of places) if (chunk.indexOf(p.name) >= 0) { hitScene = p.name; break; }
+    if (hitScene) curScene = hitScene;
+    else if (i > 0 && !curScene && places.length) curScene = places[0].name;
+
+    /* 角色：這一段出現最多次的名字。
+       找不到就留空，不沿用上一個鏡頭 —— 猜錯會鎖錯臉，
+       空著讓使用者在③鏡頭表指定是安全的。 */
+    let who = '', best = 0;
+    for (const n of nameRe) {
+      const c = chunk.split(n).length - 1;
+      if (c > best) { best = c; who = n; }
+    }
+    const size = guessSize(chunk, isDialogue);
+    const prevScene = i > 0 ? shots[shots.length - 1]._scene : '';
+    let move;
+    if (i === 0 || (prevScene && prevScene !== curScene)) move = '緩慢推近';
+    else if (isDialogue) move = '固定';
+    else if (i < chunks.length - 1 && places.some(p => chunks[i + 1].indexOf(p.name) >= 0)) move = '緩慢拉遠';
+    else move = MOVE_CYCLE[i % MOVE_CYCLE.length];
+    const chars = chunk.replace(/\s/g, '').length;
+    const dur = Math.min(8, Math.max(2, Math.round(chars / wpm * 60 * 10) / 10));
+    shots.push({
+      narr: chunk, size, move, dur, lens: seedLens(chunk, size, move),
+      _who: who, _scene: curScene, _chars: chars
+    });
+  });
+
+  const totalChars = shots.reduce((a, s) => a + s._chars, 0);
+  const totalDur = shots.reduce((a, s) => a + s.dur, 0);
+  return {
+    persons, places, shots, wpm, secPerShot,
+    stats: {
+      chars: text.length, shots: shots.length, totalChars,
+      totalDur, charsPerMin: wpm,
+      units: Math.max(1, Math.ceil(totalDur / 900)),
+      minutes: Math.round(totalDur / 60 * 10) / 10
+    }
+  };
+}
+
+/* 依偵測到的題材挑畫風；沒有強烈訊號就用寫實電影感（DEF_STYLE）。 */
+function guessStyle(text, chosen) {
+  if (chosen && STYLE_PRESETS[chosen]) return chosen;
+  for (const [re, name] of GENRE_RULES) if (re.test(text)) return name;
+  return '寫實電影感';
+}
+
+/* ═══════════ 匯入小說的 UI 串接 ═══════════ */
+let novelRes = null;
+
+function nfMsg(html, bad) {
+  const el = $('#nf-msg');
+  el.innerHTML = html
+    ? '<div class="note"' + (bad ? ' style="border-left-color:var(--red);background:rgba(232,68,122,.10)"' : '') + '>' + html + '</div>'
+    : '';
+}
+
+function nfStat(v, k) { return '<div class="stat"><b>' + v + '</b><span>' + k + '</span></div>'; }
+
+function readOpt() {
+  return {
+    secPerShot: Math.max(2, Math.min(10, num($('#nf-sec').value, 4) || 4)),
+    maxChars: Math.max(1, Math.min(20, num($('#nf-chars').value, 8) || 8)),
+    maxScenes: Math.max(1, Math.min(12, num($('#nf-scenes').value, 6) || 6))
+  };
+}
+
+function loadNovelFile(e) {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const low = f.name.toLowerCase();
+  if (low.endsWith('.doc')) {
+    nfMsg('舊版 <b>.doc</b> 是二進位格式，無法離線解析。請在文書軟體另存為 <b>.docx</b>，或把全文複製貼到下面的框。', true);
+    return;
+  }
+  nfMsg('讀取中…');
+  const rd = new FileReader();
+  rd.onerror = () => nfMsg('讀取失敗。', true);
+  rd.onload = () => {
+    const done = (text, enc) => {
+      if (!text || !text.trim()) {
+        nfMsg('這個檔案讀不到文字（可能是掃描圖檔、加密文件，或內容為空）。', true);
+        $('#nf-file').textContent = '';
+        return;
+      }
+      $('#nf-text').value = text;
+      $('#nf-file').textContent = f.name + '｜' + enc + '｜' + text.length + ' 字';
+      runAnalyze();
+    };
+    try {
+      if (low.endsWith('.docx')) {
+        docxToXml(rd.result)
+          .then(xml => done(docxXmlToText(xml), '.docx 內文'))
+          .catch(err => nfMsg('讀取 .docx 失敗：' + esc(err.message), true));
+      } else if (low.endsWith('.html') || low.endsWith('.htm')) {
+        const d = decodeText(rd.result);
+        done(htmlToText(d.text), d.enc + ' → 去 HTML 標籤');
+      } else {
+        const d = decodeText(rd.result);
+        done(d.text, d.enc);
+      }
+    } catch (err) {
+      nfMsg('解析失敗：' + esc(err.message), true);
+    }
+  };
+  rd.readAsArrayBuffer(f);
+}
+
+function runAnalyze() {
+  const raw = $('#nf-text').value;
+  if (raw.trim().length < 50) {
+    nfMsg('文字太少（至少 50 字）。請先選檔，或把小說內容貼到上面的框。', true);
+    $('#nf-apply').style.display = 'none';
+    novelRes = null;
+    return;
+  }
+  let res;
+  try { res = analyzeNovel(raw, readOpt()); }
+  catch (err) { nfMsg('分析失敗：' + esc(err.message), true); return; }
+  res.styleName = guessStyle(normalizeNovel(raw), $('#nf-style').value);
+  res.sourceName = ($('#nf-file').textContent.split('｜')[0] || '').replace(/\.(txt|md|markdown|html|htm|docx)$/i, '');
+  novelRes = res;
+  renderNovelReport(res);
+  $('#nf-apply').style.display = '';
+  nfMsg('');
+}
+
+function chipsOf(arr, withType) {
+  if (!arr.length) return '<span style="color:var(--dim)">沒有偵測到</span>';
+  return arr.map(x =>
+    '<span style="display:inline-block;background:var(--card2);border:1px solid var(--line);border-radius:999px;' +
+    'padding:3px 10px;margin:0 5px 5px 0;font-size:.82rem">' + esc(x.name) +
+    ' <b style="color:var(--gold)">×' + x.count + '</b>' +
+    (withType && x.type ? ' <span style="color:var(--dim)">' + x.type + '</span>' : '') + '</span>').join('');
+}
+
+function renderNovelReport(r) {
+  const s = r.stats;
+  const mm = Math.floor(s.totalDur / 60) + ':' + String(Math.round(s.totalDur % 60)).padStart(2, '0');
+  const actual = Math.round(s.totalChars / (s.totalDur / 60));
+  const off = Math.abs(actual - r.wpm) / r.wpm;
+  const html =
+    '<h2 class="sec">分析結果</h2>' +
+    '<div class="srow">' + nfStat(s.chars, '小說字數') + nfStat(s.shots, '建議鏡頭') +
+    nfStat(mm, '預估總長') + nfStat(s.units, '15 分鐘單元') +
+    nfStat(actual, '實際字/分') + nfStat(r.styleName, '建議畫風') + '</div>' +
+    (off > 0.1
+      ? '<div class="note">⚠ 實際節奏 <b>' + actual + ' 字/分</b>與專案設定的 <b>' + r.wpm +
+      ' 字/分</b>差 ' + Math.round(off * 100) + '%。調整「每鏡秒數」，或到總覽改旁白語速。</div>'
+      : '') +
+    '<h2 class="sec">👤 人物（' + r.persons.length + '）</h2><div>' + chipsOf(r.persons) + '</div>' +
+    '<h2 class="sec">🏠 場景（' + r.places.length + '）</h2><div>' + chipsOf(r.places, true) + '</div>' +
+    '<h2 class="sec">🎬 鏡頭表預覽（前 6 / 共 ' + r.shots.length + '）</h2>' +
+    r.shots.slice(0, 6).map((x, i) =>
+      '<div style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 12px;' +
+      'margin-bottom:7px;font-size:.85rem">' +
+      '<b style="color:var(--gold)">#' + (i + 1) + '</b> ' + x.size + '／' + x.move + '／' + x.dur + 's' +
+      (x._who ? '　角色：<b>' + esc(x._who) + '</b>' : '') +
+      (x._scene ? '　場景：<b>' + esc(x._scene) + '</b>' : '') +
+      '<div style="margin-top:3px">' + esc(x.narr.slice(0, 64)) + '…</div>' +
+      '<div style="color:var(--dim);margin-top:2px;font-size:.78rem">第③段草稿：' + esc(x.lens) + '</div></div>'
+    ).join('') +
+    '<div class="note">自動抽取是<b>草稿</b>：請到 <b>①人物</b>／<b>②場景</b> 刪掉誤判的、補上漏掉的，' +
+    '並填<b>描述字串</b>（那兩段是鎖臉／鎖場景的關鍵，之後永不手改）。' +
+    '鏡頭表的<b>第③段</b>才是每個鏡頭要微調的地方。</div>';
+  $('#nf-report').innerHTML = html;
+}
+
+function applyNovel() {
+  if (!novelRes) return;
+  const r = novelRes;
+  const has = S.chars.length || S.scenes.length || S.shots.length;
+  if (has && !confirm('套用會覆蓋目前的人物、場景與鏡頭表。建議先按「備份」下載目前的專案。繼續？')) return;
+  const cid = {}, sid = {};
+  S.chars = r.persons.map(p => {
+    const id = uid('c'); cid[p.name] = id;
+    return { id: id, name: p.name, role: p.role || '', desc: '', ref: '', face: .85, body: .5 };
+  });
+  S.scenes = r.places.map(p => {
+    const id = uid('s'); sid[p.name] = id;
+    return { id: id, name: p.name, type: p.type, desc: '', ref: '', body: .65 };
+  });
+  S.shots = r.shots.map((x, i) => ({
+    id: 'S' + String(i + 1).padStart(3, '0'),
+    narr: x.narr, size: x.size, move: x.move, dur: x.dur,
+    charId: cid[x._who] || '', sceneId: sid[x._scene] || '',
+    lens: x.lens, st: '🔄'
+  }));
+  S.style = STYLE_PRESETS[r.styleName] || DEF_STYLE;
+  if (S.meta.title === '我的小說動畫計畫' && r.sourceName) S.meta.title = r.sourceName;
+  syncForm(); renderAll(); renderChars(); renderScenes(); renderSizes();
+  save();
+  const t = document.querySelector('nav.tabs button[data-p="shot"]');
+  if (t) t.click();
+  nfMsg('已套用：<b>' + S.chars.length + '</b> 個人物、<b>' + S.scenes.length + '</b> 個場景、' +
+    '<b>' + S.shots.length + '</b> 個鏡頭。已跳到③鏡頭表。');
 }
 
 /* ═══════════ tabs ═══════════ */

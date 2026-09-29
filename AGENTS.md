@@ -57,6 +57,9 @@ window.confirm = () => true;
 - [ ] 儲存 → 載入往返資料完整
 - [ ] 四種匯出檔名正確（`shot-list.csv`／`prompts.txt`／`project.md`／`novel-project.json`）
 - [ ] 統計數字與表格列數一致
+- [ ] 匯入小說後：`S.shots[i].charId`／`sceneId` 必須真的指向存在的 `S.chars[].id`／`S.scenes[].id`
+- [ ] 匯入小說後：`buildPrompt()` 仍能組出四段（角色／場景／鏡頭／畫風）
+- [ ] 壞 JSON 匯入失敗時 `S` 不可被改動（形狀驗證必須在指派之前）
 
 **測試注入的 `charId` / `sceneId` 必須與 `S.chars`／`S.scenes` 的實際 `id` 一致**，
 否則會誤報「prompt 段數不足」或「未鎖臉」。測試失敗先懷疑測試資料，不是程式。
@@ -84,6 +87,11 @@ S = {
 | `SIZES` | 景別 → { 模板文字, 臉部強度, 主體強度 } |
 | `timecode(i)` | 累加前 i 個鏡頭的時長 |
 | `storageOK` / `put()` / `get()` | localStorage 安全包裝 |
+| `decodeText(buf)` | 位元組 → 文字，自動判別 UTF-8／Big5／GBK／UTF-16 |
+| `docxToXml(buf)` | 純原生解 `.docx` ZIP（`DecompressionStream`），取 `word/document.xml` |
+| `normalizeNovel(t)` / `joinWrapped(t)` | 正規化：**硬換行要先接回句子**，否則斷句全錯 |
+| `analyzeNovel(t, opt)` | 抽取人物／場景／鏡頭，回傳 `{persons, places, shots, stats}` |
+| `applyNovel()` | 把分析結果寫進 `S`（覆蓋前必須 `confirm`） |
 
 ## 離線相容性
 
@@ -91,6 +99,17 @@ S = {
 
 1. `storageOK` 偵測 + 記憶體退回 —— Safari 在 `file://` 下封鎖 localStorage
 2. `navigator.clipboard` 失敗時退回 `document.execCommand('copy')`
+
+## 匯入功能的實作約束
+
+匯入必須維持「單檔零依賴」，改動時注意：
+
+1. **`.docx` 只能用原生 `DecompressionStream('deflate-raw')` 解** —— 不得引入 JSZip 等函式庫。
+2. **不得改成把檔案送到遠端解析** —— 那會同時違反「零網路請求」與使用者隱私期待。
+3. **停用詞表要用「詞」的陣列，不可寫成大字串再 `split('')`** —— 那會把「高聲」拆成「高」「聲」，多字詞永遠比對不到，人名抽取會冒出大量誤判。
+4. **名字抽取要有邊界檢查**，並擋掉以介詞／助詞開頭的候選，否則「向狄公道」會被抓成「向狄公」。
+5. **找不到對應角色時要留空，不要沿用上一個鏡頭** —— 猜錯會鎖錯臉，留白讓使用者自己指定才安全。
+6. **`normalizeNovel` 必須先做 `joinWrapped`** —— 中文 txt 常在 30 字斷行，不接回去斷句會全錯。
 
 ## 文件同步
 
