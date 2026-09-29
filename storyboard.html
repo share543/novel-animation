@@ -751,7 +751,19 @@ const GENRE_RULES = [
 const ROLE_WORDS = ['偵探', '警探', '警官', '警察', '刑警', '員警', '法醫', '醫生', '護士', '律師', '檢察官',
   '助手', '秘書', '老闆', '經理', '管家', '司機', '學生', '老師', '教授', '店員', '服務生', '酒保',
   '鄰居', '房東', '記者', '隊長', '組長', '船長', '保鑣', '殺手', '小偷', '嫌犯', '證人', '目擊者',
-  '警衛', '郵差', '清潔工', '工人', '農夫', '漁夫', '畫家', '作家', '鋼琴家', '店長', '櫃檯'];
+  '警衛', '郵差', '清潔工', '工人', '農夫', '漁夫', '畫家', '作家', '鋼琴家', '店長', '櫃檯',
+  /* 家族與關係：真實小說裡「父親」「母親」出現十幾次是常態，它們就是角色，
+     原本只有職業類詞，導致這類角色一個都抓不到。 */
+  '父親', '母親', '爸爸', '媽媽', '兒子', '女兒', '妻子', '太太', '丈夫', '哥哥', '弟弟',
+  '姊姊', '妹妹', '姐姐', '爺爺', '奶奶', '外公', '外婆', '師父', '師傅', '徒弟',
+  '合夥人', '上司', '同事', '男友', '女友', '情婦', '長官', '探長', '校長', '房客'];
+
+/* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「鄭木貴探長」） */
+const NAME_TITLES = ['探長', '警官', '警探', '刑警', '隊長', '組長', '醫生', '律師', '教授',
+  '檢察官', '法醫', '偵探', '老師', '船長'];
+
+/* 名字後面必須不是中文字，才算名字到此為止（「鄭木貴，」✓／「鄭木貴探」✗） */
+function tailOK(ch) { return !ch || !/[\u4e00-\u9fff]/.test(ch); }
 
 /* 地點詞庫：命中即視為場景。涵蓋現代與古代（公案／武俠）題材。 */
 const PLACE_WORDS = {
@@ -760,12 +772,21 @@ const PLACE_WORDS = {
     '包廂', '酒吧', '咖啡廳', '咖啡館', '餐廳', '旅館', '飯店', '醫院', '教室', '圖書館', '警局', '檔案室',
     '衙門', '縣衙', '公堂', '大堂', '後堂', '廳堂', '偏廳', '內室', '廂房', '帳房', '庫房', '柴房', '灶房',
     '馬房', '客棧', '酒樓', '茶館', '客廳裡', '正殿', '偏殿', '祠堂', '廟裡', '古廟', '破廟', '山神廟',
-    '繡樓', '閨房', '學堂', '衙內', '牢裡', '獄中'],
+    '繡樓', '閨房', '學堂', '衙內', '牢裡', '獄中',
+    /* 現代場景：原詞庫偏古典（衙門／柴房／廂房），現代小說的家、超商、
+       派出所、偵訊室一個都不認得。 */
+    '家裡', '家裏', '家中', '車內', '車上', '船上', '電梯', '廚房裡', '洗手間', '廁所',
+    '超商', '便利商店', '咖啡店', '早餐店', '小吃店', '賓館', '汽車旅館', '病房',
+    '派出所', '分局', '偵訊室', '審訊室', '值班室', '會客室', '會議室裡'],
   '室外': ['門口', '大門', '陽台', '院子', '花園', '街道', '巷子', '馬路', '車站', '月台', '碼頭', '港口',
     '機場', '橋上', '河邊', '海邊', '森林', '山頂', '墓園', '教堂', '寺廟', '廣場', '公園', '停車場',
     '屋頂', '天臺', '街角', '校門', '市場', '田埂', '工地', '岸邊',
     '街市', '巷口', '橋頭', '城門', '渡口', '河岸', '山坡', '樹林', '曠野', '墳場', '義莊', '後院',
-    '衙門口', '路口', '田間', '溪邊', '井邊', '山腳', '郊外', '野外']
+    '衙門口', '路口', '田間', '溪邊', '井邊', '山腳', '郊外', '野外',
+    /* 現代戶外場景「現場」對推理小說尤其重要（凶手回到現場）。 */
+    '現場', '街上', '街頭', '巷內', '巷口裡', '廟口', '廟前', '廟埕', '城隍廟', '教堂裡',
+    '花叢', '草叢', '草地', '空地', '大樓', '公寓', '騎樓', '大廈', '都市', '城市', '郊區',
+    '夜市', '天橋', '河堤', '堤防', '海灘', '沙灘', '農場', '球場', '校園', '泳池', '山城', '漁港']
 };
 const PLACE_ALL = PLACE_WORDS['室內'].concat(PLACE_WORDS['室外']);
 const PLACE_TYPE = {};
@@ -854,6 +875,32 @@ function extractPersons(text, limit) {
         const cand = text.slice(start, idx);
         if (!/^[\u4e00-\u9fff]+$/.test(cand)) break;
         if (!boundaryOK(start > 0 ? text[start - 1] : '')) break;
+        if (looksLikeName(cand)) { bump(cand); break; }
+      }
+    }
+  }
+  /* 自我介紹句：「我叫鄭木貴」——第一人稱小說這樣介紹主角，沒有「說道」可抓。 */
+  for (const v of ['我叫', '我是', '名字叫', '叫作']) {
+    let idx = -1;
+    while ((idx = text.indexOf(v, idx + 1)) >= 0) {
+      const s = idx + v.length;
+      for (let len = 4; len >= 2; len--) {
+        const cand = text.slice(s, s + len);
+        if (!/^[\u4e00-\u9fff]+$/.test(cand) || cand.length !== len) continue;
+        if (tailOK(text[s + len] || '')) { if (looksLikeName(cand)) { bump(cand); break; } }
+      }
+    }
+  }
+  /* 名字＋職稱：「鄭木貴探長」——偵探小說指名道姓最常見的寫法。 */
+  for (const t of NAME_TITLES) {
+    let idx = -1;
+    while ((idx = text.indexOf(t, idx + 1)) >= 0) {
+      for (let len = 3; len >= 2; len--) {
+        const start = idx - len;
+        if (start < 0) continue;
+        const cand = text.slice(start, idx);
+        if (!/^[\u4e00-\u9fff]+$/.test(cand)) continue;
+        if (start > 0 && !boundaryOK(text[start - 1])) break;
         if (looksLikeName(cand)) { bump(cand); break; }
       }
     }
@@ -1026,10 +1073,14 @@ function splitSentences(t) {
 function hardSplit(chunk, max) {
   const out = [];
   let rest = chunk;
+  /* 先用寬一點的窗口找標點：原本只在 max 字內找，找不到就直接從字中間切開，
+     造成「帶了一個人回」／「來，並且告訴…」這種把詞切一半的字幕。
+     多讓幾個字去換一個自然斷點，字幕讀起來才不會斷氣。 */
+  const wide = Math.round(max * 1.6);
   while (rest.length > max) {
     let cut = -1;
-    for (const p of ['，', '、', '；', '：', ',', ';']) {
-      const i = rest.lastIndexOf(p, max);
+    for (const p of ['，', '、', '；', '：', ',', ';', ' ']) {
+      const i = rest.lastIndexOf(p, wide);
       if (i > cut && i >= Math.floor(max * 0.5)) cut = i + 1;
     }
     if (cut < 0) cut = max;
@@ -1112,16 +1163,21 @@ function analyzeNovel(rawText, opt) {
     }
   }
 
-  const nameRe = persons.filter(p => !p.role).map(p => p.name);
+  /* 比對用的角色名要含 role 型角色（父親／母親／探長…），否則整篇沒有一個
+     「某某說道」時，逐鏡角色會全空。順序沿用 persons（真名在前、角色在後），
+     讓同一段同時出現真名與角色時，優先命中真名。 */
+  const nameRe = persons.map(p => p.name);
   const shots = [];
-  let curScene = places.length ? places[0].name : '';
+  /* 場景起點留空，不猜。原本初始化成 places[0]（出現次數最高的場景），
+     結果「臥室」在故事中段才出現，前面幾十個鏡頭卻全被標成臥室。
+     角色的規則是不猜（猜錯會鎖錯臉），場景同理：沒提到就留空。 */
+  let curScene = '';
   chunks.forEach((chunk, i) => {
     const isDialogue = chunk.indexOf('「') >= 0 || chunk.indexOf('『') >= 0;
     /* 場景：這一段提到哪個場景就切過去 */
     let hitScene = '';
     for (const p of places) if (chunk.indexOf(p.name) >= 0) { hitScene = p.name; break; }
-    if (hitScene) curScene = hitScene;
-    else if (i > 0 && !curScene && places.length) curScene = places[0].name;
+    if (hitScene) curScene = hitScene;   /* 場景一旦出現就一直沿用到下一個場景 */
 
     /* 角色：這一段出現最多次的名字。
        找不到就留空，不沿用上一個鏡頭 —— 猜錯會鎖錯臉，

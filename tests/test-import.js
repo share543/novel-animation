@@ -254,6 +254,38 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
   ok(/function importAny\(e\)\{[\s\S]{0,160}?importJSON\(e\)/.test(src), 'importAny 遇到 .json 仍走 importJSON（不破壞備份匯入）');
   ok(/loadNovelFileObj\(f\)/.test(src), 'importAny 把原稿交給 loadNovelFileObj');
 
+  console.log('\n=== 11. 第一人稱小說的角色與場景 ===');
+  /* 真實案例：《陰影裏的人》——全篇第一人稱、沒有「某某說道」，舊版一個角色都抓不到，
+     且所有鏡頭都被套上「臥室」（該場景其實在中段才出現）。 */
+  const fp = '我叫鄭木貴。父親做生意，父親賠了錢，父親自殺了。母親哭著說，母親帶我長大，母親後來也走了。'
+    + '鄭木貴探長說：「這案子我來辦。」';
+  const rf = analyzeNovel(fp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const fnames = rf.persons.map(p => p.name);
+  ok(fnames.indexOf('鄭木貴') >= 0, '「我叫鄭木貴」這種自我介紹句抓到主角', fnames.join('／'));
+  ok(fnames.indexOf('父親') >= 0, '「父親」出現 ≥3 次算一個角色', fnames.join('／'));
+  ok(fnames.indexOf('母親') >= 0, '「母親」出現 ≥3 次算一個角色', fnames.join('／'));
+  ok(rf.shots.some(s => s._who), '逐鏡角色含 role 型角色（原本被 !p.role 整個濾掉）');
+  ok(rf.shots.every(s => !s._scene), '沒提到場景時留空，不套最高頻場景', rf.shots.map(s => s._scene || '-').join(','));
+
+  /* 前兩句完全不提地點，第三句才出現「書房」——
+     舊版會把「書房」（全文最高頻場景）套到包含前兩句在內的所有鏡頭。 */
+  const sp = '他坐下來，翻開卷宗，一頁一頁慢慢看。他嘆了一口氣，什麼話也沒說。'
+    + '他走進書房，點亮了桌上的燈。';
+  const rs = analyzeNovel(sp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  const seq = rs.shots.map(s => s._scene);
+  ok(seq[0] === '', '場景還沒出現的鏡頭留空（原本套最高頻場景）', JSON.stringify(seq));
+  ok(seq.indexOf('書房') > 0, '場景在文中出現後才開始標', JSON.stringify(seq));
+  ok(seq[seq.length - 1] === '書房', '場景一旦出現會沿用到下一個場景', JSON.stringify(seq));
+
+  console.log('\n=== 12. 字幕斷點（不把詞切一半）===');
+  const hp = '有一天，父親高高興興地帶了一個人回來，並且告訴母親說他已決定和這個人合夥，'
+    + '共同投資購地皮蓋房子出售，同時留他在家吃晚飯。';
+  const rh = analyzeNovel(hp, { secPerShot: 4, maxChars: 8, maxScenes: 6 });
+  ok(!rh.shots.some(s => /回$/.test(s.narr.trim())), '不會把「回來」切成「回」／「來」',
+    rh.shots.map(s => s.narr).join('｜'));
+  ok(rh.shots.filter(s => /[。！？，、；：]$/.test(s.narr.trim())).length >= rh.shots.length - 1,
+    '絕大多數鏡頭斷在標點上', rh.shots.length + ' 鏡');
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();
