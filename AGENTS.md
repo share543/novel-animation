@@ -58,6 +58,8 @@ window.confirm = () => true;
 - [ ] 四種匯出檔名正確（`shot-list.csv`／`prompts.txt`／`project.md`／`novel-project.json`）
 - [ ] 統計數字與表格列數一致
 - [ ] 匯入小說後：`S.shots[i].charId`／`sceneId` 必須真的指向存在的 `S.chars[].id`／`S.scenes[].id`
+- [ ] PDF 匯入：`pdfToText()` 對真實中文 PDF 必須 `unmapped === 0`（有亂碼就是 CMap 沒逐字型套對）
+- [ ] PDF 匯入：掃描版要回 `status === 'scanned'`，**不可**回一堆亂碼當成功
 - [ ] 匯入小說後：`buildPrompt()` 仍能組出四段（角色／場景／鏡頭／畫風）
 - [ ] 壞 JSON 匯入失敗時 `S` 不可被改動（形狀驗證必須在指派之前）
 
@@ -89,6 +91,8 @@ S = {
 | `storageOK` / `put()` / `get()` | localStorage 安全包裝 |
 | `decodeText(buf)` | 位元組 → 文字，自動判別 UTF-8／Big5／GBK／UTF-16 |
 | `docxToXml(buf)` | 純原生解 `.docx` ZIP（`DecompressionStream`），取 `word/document.xml` |
+| `pdfToText(buf)` | 純原生抽 PDF 文字：物件索引 → 頁面樹 → 逐字型 CMap → 依座標重排；回 `{status, text, pages, fonts, cmaps, unmapped}` |
+| `parseCMap(text)` | 解 `ToUnicode`（`bfchar`＋`bfrange` 含陣列型；碼長依 `codespacerange` 判 1／2 位元組） |
 | `normalizeNovel(t)` / `joinWrapped(t)` | 正規化：**硬換行要先接回句子**，否則斷句全錯 |
 | `analyzeNovel(t, opt)` | 抽取人物／場景／鏡頭，回傳 `{persons, places, shots, stats}` |
 | `applyNovel()` | 把分析結果寫進 `S`（覆蓋前必須 `confirm`） |
@@ -105,11 +109,14 @@ S = {
 匯入必須維持「單檔零依賴」，改動時注意：
 
 1. **`.docx` 只能用原生 `DecompressionStream('deflate-raw')` 解** —— 不得引入 JSZip 等函式庫。
-2. **不得改成把檔案送到遠端解析** —— 那會同時違反「零網路請求」與使用者隱私期待。
-3. **停用詞表要用「詞」的陣列，不可寫成大字串再 `split('')`** —— 那會把「高聲」拆成「高」「聲」，多字詞永遠比對不到，人名抽取會冒出大量誤判。
-4. **名字抽取要有邊界檢查**，並擋掉以介詞／助詞開頭的候選，否則「向狄公道」會被抓成「向狄公」。
-5. **找不到對應角色時要留空，不要沿用上一個鏡頭** —— 猜錯會鎖錯臉，留白讓使用者自己指定才安全。
-6. **`normalizeNovel` 必須先做 `joinWrapped`** —— 中文 txt 常在 30 字斷行，不接回去斷句會全錯。
+2. **`.pdf` 只能用原生 API** —— 不得引入 pdf.js。`stream` 長度一律看 `/Length`；靠 `endstream` 反推再刪結尾換行會把壓縮資料剃壞（實測整個檔抽不到字）。
+3. **CMap 必須逐字型套** —— 每個字型子集各用同一段碼域指向不同字，合併成一張表就是亂碼。
+4. **文字段位置只用 `tm`（＋ Form 的 `/Matrix`），刻意不套 CTM** —— 設計工具匯出常用 `cm` 做 y 翻轉，套上去會讓 y 排序上下顛倒（實測某表格檔 82% → 35%）。
+5. **不得改成把檔案送到遠端解析** —— 那會同時違反「零網路請求」與使用者隱私期待。
+6. **停用詞表要用「詞」的陣列，不可寫成大字串再 `split('')`** —— 那會把「高聲」拆成「高」「聲」，多字詞永遠比對不到，人名抽取會冒出大量誤判。
+7. **名字抽取要有邊界檢查**，並擋掉以介詞／助詞開頭的候選，否則「向狄公道」會被抓成「向狄公」。
+8. **找不到對應角色時要留空，不要沿用上一個鏡頭** —— 猜錯會鎖錯臉，留白讓使用者自己指定才安全。
+9. **`normalizeNovel` 必須先做 `joinWrapped`** —— 中文 txt 常在 30 字斷行，不接回去斷句會全錯。
 
 ## 文件同步
 

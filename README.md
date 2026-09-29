@@ -39,7 +39,7 @@ GitHub Pages：<https://share543.github.io/novel-animation/storyboard.html>
 - **鏡頭表表格內直接編輯**：不用逐筆開表單，每列即時預覽組裝後的 prompt。
 - **旁白字數換算**：依語速自動估算總時長、建議切成幾個單元、每格建議秒數。
 - **四種匯出**：TXT（貼進生成工具）、CSV（批次管理）、Markdown（存檔）、JSON（備份／交換）。
-- **匯入小說原稿**：直接吃 `.txt`／`.md`／`.html`／`.docx`，自動抽出人物、場景、鏡頭表與畫風提示詞草稿，不用再一格格手打。編碼（Big5／GBK／UTF-16／UTF-8+BOM）自動判別。
+- **匯入小說原稿**：直接吃 `.txt`／`.md`／`.html`／`.docx`／`.pdf`，自動抽出人物、場景、鏡頭表與畫風提示詞草稿，不用再一格格手打。編碼（Big5／GBK／UTF-16／UTF-8+BOM）自動判別。
 - **自動記憶**：資料存瀏覽器 `localStorage`，關掉視窗不會不見。
 - **內建範例**：點「載入範例」立刻看到完整運作（2 角色、2 場景、8 鏡頭）。
 
@@ -88,15 +88,37 @@ GitHub Pages：<https://share543.github.io/novel-animation/storyboard.html>
 
 不想一格格手打鏡頭表，就把小說原稿丟進來。
 
-**支援格式**：`.txt`／`.md`／`.html`／`.docx`／`.htm`
+**支援格式**：`.txt`／`.md`／`.html`／`.docx`／`.pdf`／`.htm`
 
 | 格式 | 怎麼讀 | 備註 |
 |---|---|---|
 | `.txt`／`.md` | 取純文字 | 編碼自動判別：UTF-8、UTF-8+BOM、Big5（繁）、GBK（簡）、UTF-16 |
 | `.html`／`.htm` | 用原生 `DOMParser` 去標籤 | 適合從網頁或電子書匯出的存檔 |
 | `.docx` | 用 `DecompressionStream('deflate-raw')` 解 ZIP 後取 `word/document.xml` | **純原生，沒有引入 JSZip 之類的函式庫** |
+| `.pdf` | 純原生解析 PDF：解物件流 → 逐字型套 `ToUnicode` CMap → 依座標重排 | **純原生，沒有引入 pdf.js**；掃描版會誠實說做不到（見下） |
 
 **會自動產生**：人物清單、場景清單、整份鏡頭表（含景別、運鏡、秒數）、畫風建議。
+
+### PDF 匯入的限制（實測過的真相）
+
+中文 PDF 的內文通常**不是 Unicode**，而是字型子集的自訂編碼（CID）：同一個位元組在不同字型裡指向不同的字。所以「抽出文字」＝解析內容流 → 追蹤當前字型 → 套用**該字型自己的** `ToUnicode` 對照表。整併成一張表就會變亂碼。
+
+拿機器上 42 個真實 PDF 跟 `pdftotext` 對答案的實測結果：
+
+| 指標 | 結果 |
+|---|---|
+| 字元涵蓋率（內容有沒有掉，不看順序） | 平均 **90.7%** |
+| 從 Word／LibreOffice 匯出的中文檔 | **100%**（逐字相同） |
+| 真的掉內容的檔 | 2 個：ICML 範本 50%、合約信封 70%（文字藏在 Form XObject 與特殊字型裡） |
+
+**兩個做不到的情況會明確回報，不會假裝成功**：
+
+1. **掃描版 PDF**（影印、拍照來的）——純原生沒有 OCR，抽不到任何文字。工具會偵測出來並告訴你，不會丟一堆亂碼。
+2. **沒有 `ToUnicode` 的 CID 字型**——老舊中文產生器常這樣，只能得到亂碼，同樣會偵測後提示。
+
+兩者都適用的替代做法：**用 PDF 閱讀器全選複製，貼進下方的文字框**。瀏覽器的 PDF 閱讀器已經處理好 CMap，貼進來就是正確中文。
+
+另外，**表格與多欄版面**（設計工具匯出的簡報）字會全對，但閱讀順序可能與 `pdftotext` 不同——對單欄連貫的小說正文沒有影響。
 
 **判讀方式**（全部在瀏覽器本機執行，不上傳）：
 
@@ -163,6 +185,7 @@ buildPrompt(shot) = [ char.desc, scene.desc, shot.lens, S.style ]
 匯入必須維持「單檔、零依賴」，所以：
 
 - `.docx` 用瀏覽器原生 `DecompressionStream('deflate-raw')` 手動解 ZIP（解析中央目錄 → 找 `word/document.xml` → 解壓），不引入任何解壓縮函式庫。
+- `.pdf` 用原生 `DecompressionStream('deflate')` 解 FlateDecode，自行掃 `N 0 obj` 定位物件（不依賴 xref）、自行解 `ToUnicode` CMap，不引入 pdf.js。stream 長度一律以 `/Length` 為準——靠 `endstream` 反推再刪結尾換行是錯的，壓縮資料本身可能剛好以 `\n` 結尾。
 - 編碼判別用原生 `TextDecoder`，不是先驗證 UTF-8，失敗才依序嘗試 Big5／GBK，取「中文字最多、亂碼最少」的結果。
 - 沒有 `fetch`、沒有 `XMLHttpRequest`：檔案只經 `FileReader` 進到記憶體，分析完就留在頁面狀態裡。
 

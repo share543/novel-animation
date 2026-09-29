@@ -3,7 +3,8 @@
    這樣才會抓到「黑名單被 split('') 拆成單字」這類只改一行、卻讓品質靜默崩壞的錯。
 
    用法：node tests/test-import.js
-   （需要 Node 18+：用到 DecompressionStream / TextDecoder / Response） */
+   （需要 Node 18+：用到 DecompressionStream / TextDecoder / Response / Blob）
+   涵蓋 txt/md/html/docx 匯入、編碼判別、以及 PDF 解析（純原生）。 */
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -125,5 +126,103 @@ for (const bad of [/<script\s+src=/, /<link\s/, /@import/, /\bfetch\(/, /XMLHttp
   ok(!bad.test(src), `storyboard.html 不含 ${bad}`);
 ok(!/(?<![A-Za-z])url\(/.test(src), '不含 CSS url() 外部資源');
 
-console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
-process.exit(fail ? 1 : 0);
+console.log('\n=== 9. PDF 解析（純原生，無函式庫）===');
+ok(typeof pdfToText === 'function', 'pdfToText 存在');
+ok(typeof parseCMap === 'function', 'parseCMap 存在');
+
+const zlib = require('zlib');
+
+/* 現做真的 PDF：只用 "N 0 obj" 掃描定位（不需 xref），與實測 42 個真檔同一條路徑。
+   /Length 由程式算好填進去，所以也會測到「靠 endstream 反推會截斷」那個 bug。 */
+function buildPDF(objs) {
+  let out = '%PDF-1.4\n';
+  for (const o of objs) {
+    out += o.n + ' 0 obj\n';
+    if (o.stream == null) out += o.dict + '\nendobj\n';
+    else {
+      const len = Buffer.byteLength(o.stream, 'latin1');
+      out += o.dict.replace('@L', String(len)) + '\nstream\n' + o.stream + '\nendstream\nendobj\n';
+    }
+  }
+  return Buffer.from(out + 'trailer << /Root 1 0 R >>\n%%EOF\n', 'latin1');
+}
+
+function pdfWith(cmapText, contentSrc, flate) {
+  const body = flate
+    ? zlib.deflateSync(Buffer.from(contentSrc, 'latin1')).toString('latin1')
+    : contentSrc;
+  return buildPDF([
+    { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { n: 2, dict: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { n: 3, dict: '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> ' +
+        '/Contents 4 0 R /MediaBox [0 0 300 300] >>' },
+    { n: 4, dict: flate ? '<< /Length @L /Filter /FlateDecode >>' : '<< /Length @L >>', stream: body },
+    { n: 5, dict: '<< /Type /Font /Subtype /Type0 /Encoding /Identity-H ' +
+        '/DescendantFonts [6 0 R] /ToUnicode 7 0 R >>' },
+    { n: 6, dict: '<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Test >>' },
+    { n: 7, dict: '<< /Length @L >>', stream: cmapText }
+  ]);
+}
+
+const cmapHead = twoByte =>
+  '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n' +
+  '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n' +
+  '/CMapName /T-UCS def\n/CMapType 2 def\n1 begincodespacerange\n' +
+  (twoByte ? '<0000> <FFFF>' : '<00> <FF>') + '\nendcodespacerange\n';
+const cmapTail = '\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n';
+
+/* 種子碼刻意「不等於」Unicode（0041 不是 'A'，而是「狄」），
+   這樣才證明真的有套 CMap，而不是矇到。 */
+const CMapBfchar = cmapHead(true) +
+  '6 beginbfchar\n<0041> <72C4>\n<0042> <516C>\n<0043> <6848>\n' +
+  '<0044> <6D2A>\n<0045> <4EAE>\n<0046> <9053>\nendbfchar' + cmapTail;
+
+/* 兩行文字，中間夾一行註解「% endstream」：
+   靠 /Length 才讀得完整，靠 endstream 反推會在這裡截斷、第二行整個消失。 */
+const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
+  '% endstream\n' +
+  'BT /F1 12 Tf 1 0 0 1 20 80 Tm <004400450046> Tj ET\n';
+
+(async () => {
+  const r1 = await pdfToText(pdfWith(CMapBfchar, CONTENT, false));
+  ok(r1.status === 'ok', '未壓縮 PDF：狀態 ok', r1.status);
+  ok(r1.text.indexOf('狄公案') >= 0, 'bfchar 對照正確（狄公案）', r1.text.slice(0, 60));
+  ok(r1.text.indexOf('洪亮道') >= 0 && r1.text.indexOf('洪亮道') !== r1.text.indexOf('狄公案'),
+    '/Length 生效：endstream 之後的文字沒有被截斷', r1.text.slice(0, 80));
+  ok(r1.mapped === 6 && r1.unmapped === 0, '6 個字全部對照成功', r1.mapped + '/' + r1.unmapped);
+
+  const r2 = await pdfToText(pdfWith(CMapBfchar, CONTENT, true));
+  ok(r2.text.indexOf('狄公案') >= 0 && r2.text.indexOf('洪亮道') >= 0,
+    'FlateDecode 壓縮內文解得開', r2.text.slice(0, 60));
+
+  const CMapRange = cmapHead(true) +
+    '2 beginbfrange\n<0041> <0043> <0041>\n<0050> <0052> [<516C> <6848> <72C4>]\nendbfrange' + cmapTail;
+  const r3 = await pdfToText(pdfWith(CMapRange,
+    'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
+    'BT /F1 12 Tf 1 0 0 1 20 80 Tm <005000510052> Tj ET\n', false));
+  ok(r3.text.indexOf('ABC') >= 0, 'bfrange 連續型正確（ABC）', r3.text.slice(0, 40));
+  ok(r3.text.indexOf('公案狄') >= 0, 'bfrange 陣列型正確（公案狄）', r3.text.slice(0, 60));
+
+  /* 單位元組碼域（LibreOffice／Word 匯出中文 PDF 常見這種） */
+  const CMap1 = cmapHead(false) + '3 beginbfchar\n<41> <72C4>\n<42> <516C>\n<43> <6848>\nendbfchar' + cmapTail;
+  const r4 = await pdfToText(pdfWith(CMap1,
+    'BT /F1 12 Tf 1 0 0 1 20 100 Tm <414243> Tj ET\n', false));
+  ok(r4.text.indexOf('狄公案') >= 0, '單位元組碼域判定正確（不被拆成 2 碼）', r4.text.slice(0, 40));
+
+  /* 掃描版：只有頁面、沒有任何字型與內文 → 必須誠實回報，不能吐亂碼 */
+  const scanned = buildPDF([
+    { n: 1, dict: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { n: 2, dict: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { n: 3, dict: '<< /Type /Page /Parent 2 0 R /Resources << >> /MediaBox [0 0 300 300] >>' }
+  ]);
+  const r5 = await pdfToText(scanned);
+  ok(r5.status === 'scanned', '掃描版被認出（狀態 scanned）', r5.status);
+  ok(r5.note.indexOf('OCR') >= 0, '掃描版提示要 OCR', r5.note);
+
+  const r6 = await pdfToText(Buffer.from('這不是 PDF', 'utf8'));
+  ok(r6.status === 'not-pdf', '非 PDF 檔案被擋下', r6.status);
+
+  console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
+  process.exit(fail ? 1 : 0);
+})();
+
