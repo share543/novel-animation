@@ -25,7 +25,7 @@ r.persons.slice(0, 8).forEach(function (p) {
 console.log('\n場景（' + r.places.length + '）：');
 r.places.forEach(function (p) { console.log('  ' + p.name.padEnd(8) + ' ' + p.type + '　' + (p.descDraft || '').slice(0, 44)); });
 const seasons = r.places.map(p => (p.descDraft || '').split('；').pop().trim());
-console.log('\n季節一致：' + (new Set(seasons).size <= 1 ? '✅ 一致' : '❌ ' + new Set(seasons).size + ' 種'));
+console.log('\n年代：' + detectEra(text) + '　季節一致：' + (new Set(seasons).size <= 1 ? '✅ 一致' : '❌ ' + new Set(seasons).size + ' 種'));
 console.log('物件特寫鏡：' + r.shots.filter(s => /特寫：/.test(s.lens || '')).length + '　無明確動作：' + r.shots.filter(s => /無明確動作/.test(s.lens || '')).length);
 console.log('\n前 5 鏡：');
 r.shots.slice(0, 5).forEach(function (s) {
