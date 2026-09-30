@@ -752,6 +752,9 @@ const FAMILY_WORDS = new Set([
    只放「一般規則（名字＋動詞／名字＋職稱／句首統計）抓不到」的名字 ——
    已抓得到的名字放進來，會被 FULL_NAMES 與其他規則各算一次，次數翻倍。 */
 const FULL_NAMES = [
+  '吳正信',
+  '潘國輝',
+  '潘國芳',
   '王宜政',
   '王巫瑛',
   '銀墜子小雷',
@@ -776,7 +779,11 @@ const NAME_ALIASES = {
   '小張': '警員小張',
   '阿善師': '阿善師進福',
   '進福': '阿善師進福',
-  '鄭探長': '鄭組長'
+  '鄭探長': '鄭組長',
+  '阿信': '吳正信',
+  '吳先生': '吳正信',
+  '吳太太': '阿英',
+  '老農': '老林'
 };
 const NAME_TITLES = [
   '所長',
@@ -921,8 +928,11 @@ const NOT_NAME = new Set([
   '田地', '田地', '杜絕', '葉子', '蘇醒', '沈默', '陸地', '汪洋', '金子', '余下', '任憑', '丁點'
 ]);
 
-/* 阿X／小X／老X 這種暱稱：第二字不能是這些常見字，否則「老兒」「小聲」會被當成人名。 */
-const PREFIX_BAD = new Set('兒人太師闆頭家時心聲便的了是在有大小多少東西樣麼候邊面前後上下內外'.split(''));
+/* 阿X／小X／老X 這種暱稱：第二字不能是這些常見字，否則「老兒」「小聲」會被當成人名。
+   親屬／稱謂字也算在內（阿伯／老伯／阿公／阿婆＝稱呼不是名字，「阿姨」「公公」「婆婆」
+   本來就已被 FAMILY_WORDS 擋掉）—— 實測《黃色光下的黑騎士》的目擊者被警察叫「老伯」，
+   和本名「老林」變成兩個角色。 */
+const PREFIX_BAD = new Set('兒人太師闆頭家時心聲便的了是在有大小多少東西樣麼候邊面前後上下內外伯公婆嬸嫂姨奶爺'.split(''));
 
 /* 名字前面必須是這些字之一（或字串開頭），避免把長詞的尾巴當成名字
    —— 例如「馬榮高聲罵道」不該抓出「高聲罵」。 */
@@ -1025,6 +1035,46 @@ function extractPersons(text, limit) {
   const intro = new Set();          /* 「我叫X」句型抓到的名字＝敘述者候選 */
   const loose = new Set();          /* 靠放寬規則進來的名字，最後要用出現次數過濾 */
   const bump = n => cnt.set(n, (cnt.get(n) || 0) + 1);
+  /* 放寬規則進來的名字要用次數把關：只出現一兩次的多半是誤判。
+     門檻跟職稱一致（短篇低、長篇高）。在此先定義，因為暱稱規則要用。
+     暱稱規則必須跑在別名合併「之前」—— 否則別名併入的次數會被後面
+     暱稱規則的 max() 吃掉（實測「阿英」22 ＋「吳太太」12 只算成 22）。 */
+  const looseNeed = text.length < 3000 ? 2 : 3;
+  /* 暱稱（老徐／小陳／阿信）：台灣短篇的主要人物常只有小名，姓氏規則抓不到。
+     ① 第二字是姓氏的（老徐／小陳）：後面接得像人話就收（老徐的／老徐說）。
+     ② 第二字不是姓氏的（阿信／阿英／老農）：用「左邊是真正的詞界」當證據 ——
+        名字幾乎都出現在標點、助詞或動詞補語之後。
+     ② 是為了《黃色光下的黑騎士》加的：句首統計會先試 3 字候選（「阿信騎」
+     「阿英緊」），半截字串通過寬鬆判定就 break，2 字名一次都拿不到分，
+     以致全篇 24 次的被害人「阿信」和 25 次的「阿英」一個都沒抓到。 */
+  (function () {
+    /* 常見姓氏。不能只靠「同篇出現過的全名」當證據 —— 「徐柱」本身也沒被抽到
+       （只出現五次、沒有「名字＋動詞」的位置），拿它當證據等於互相等待。 */
+    const SURNAMES = '王李張劉陳楊黃趙周吳徐孫馬朱胡郭何高林羅鄭梁謝宋唐許韓馮鄧曹彭曾蕭田董袁潘于蔣蔡余杜葉程蘇魏呂丁沈任姚盧姜崔鍾譚陸汪范金石廖賈夏韋方白鄒孟熊秦邱江尹薛閻段雷侯龍史陶黎賀顧毛郝龔邵萬錢嚴覃武戴莫孔向湯';
+    const surnames = new Set(SURNAMES.split(''));
+    /* 暱稱後面要接這些字才算「被當成人用」：老徐的／老徐家／老徐說／老徐又… */
+    const NICKEY = /[的家說道是人也被在和跟向對問答死活來去走坐站笑哭看聽想做拿放掃點搖嘆]/;
+    const nick = new Map();
+    const re = /([老小阿])([\u4e00-\u9fff])/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const w = m[0];
+      const after = text.charAt(m.index + w.length);
+      if (surnames.has(m[1])) {
+        if (!NICKEY.test(after)) continue;
+      } else {
+        if (!looksLikeName(w)) continue;
+        /* 「小飛機」這一類：2 字前綴若後面接著「實物字」，代表它是一個東西
+           而不是人（小飛＋機）。少了這道，2 字暱稱會把「小飛機」截成「小飛」。 */
+        if (THING_TAIL.has(after)) continue;
+        if (!boundaryOK(m.index > 0 ? text.charAt(m.index - 1) : '')) continue;
+      }
+      nick.set(w, (nick.get(w) || 0) + 1);
+    }
+    /* 取最大值而不是「沒有才寫」—— 其他規則可能已經用很低的次數把它收進去了
+       （實測「阿英」被某條規則以 2 次寫入，暱稱規則的 22 次因此完全進不來）。 */
+    for (const [w, c] of nick) if (c >= looseNeed) cnt.set(w, Math.max(cnt.get(w) || 0, c));
+  })();
   /* 完整名稱優先匹配：避免截斷版（「菜鳥小」×22、「高老先」×8、「阿善師」×14）
      通過檢查後，短版本永遠沒被嘗試。這些名稱在文本中直接出現，優先匹配。 */
   for (const fn of FULL_NAMES) {
@@ -1166,41 +1216,19 @@ function extractPersons(text, limit) {
     if (c >= clauseNeed) { cnt.set(n, Math.max(cnt.get(n) || 0, c)); loose.delete(n); }
   }
   /* 半截名全部丟掉：「鄭組」「張醫」「分局」（分局長的前綴）—— 這是
-     「名字＋職稱」與句首統計兩條規則的副產品，每篇都會冒出幾個。
-     一定要放在所有規則之後，否則後面的規則會把它們再加回來。 */
-  const nameKeys = [...cnt.keys()];
-  const longerWords = nameKeys.concat(ROLE_WORDS, NAME_TITLES, Array.from(FAMILY_WORDS));
-  for (const n of nameKeys) {
-    if (longerWords.some(function (m) { return m !== n && m.length > n.length && m.indexOf(n) === 0; })) cnt.delete(n);
-  }
-  /* 放寬規則進來的名字要用次數把關：只出現一兩次的多半是誤判。
-     門檻跟職稱一致（短篇低、長篇高）。 */
-  const looseNeed = text.length < 3000 ? 2 : 3;
-
-  /* 「老徐」「小陳」這種暱稱：需要「同篇出現過全名、而且同姓」當證據。
-     實測《鋼針》的被害人「老徐」在文中出現 71 次，卻一次都沒出現在「名字＋動詞」
-     的位置（都是「老徐的住處」「說老徐人最好」「老徐家跑出來」），所有位置規則
-     都拿不到它 —— 而「徐柱」出現過五次，姓徐，所以老徐就是徐柱。
-     沒有全名當證據時不猜，否則「老家」「小王八蛋」都會被收成人名。 */
-  (function () {
-    /* 常見姓氏。不能只靠「同篇出現過的全名」當證據 —— 「徐柱」本身也沒被抽到
-       （只出現五次、沒有「名字＋動詞」的位置），拿它當證據等於互相等待。 */
-    const SURNAMES = '王李張劉陳楊黃趙周吳徐孫馬朱胡郭何高林羅鄭梁謝宋唐許韓馮鄧曹彭曾蕭田董袁潘于蔣蔡余杜葉程蘇魏呂丁沈任姚盧姜崔鍾譚陸汪范金石廖賈夏韋方白鄒孟熊秦邱江尹薛閻段雷侯龍史陶黎賀顧毛郝龔邵萬錢嚴覃武戴莫孔向湯';
-    const surnames = new Set(SURNAMES.split(''));
-    /* 暱稱後面要接這些字才算「被當成人用」：老徐的／老徐家／老徐說／老徐又… */
-    const NICKEY = /[的家說道是人也被在和跟向對問答死活來去走坐站笑哭看聽想做拿放掃點搖嘆]/;
-    const nick = new Map();
-    const re = /[老小]([\u4e00-\u9fff])/g;
-    let m;
-    while ((m = re.exec(text))) {
-      if (!surnames.has(m[1])) continue;
-      const w = m[0];
-      const after = text.charAt(m.index + w.length);
-      if (!NICKEY.test(after)) continue;   /* 「小王八蛋」的「小王」不會被收 */
-      nick.set(w, (nick.get(w) || 0) + 1);
+     「名字＋職稱」、句首統計與暱稱規則的副產品，每篇都會冒出幾個。
+     一定要放在所有會產生名字的規則之後。 */
+  function dropHalfNames() {
+    const nameKeys = [...cnt.keys()];
+    /* FULL_NAMES／別名鍵也要算「更長的字」—— 它們是全域詞庫，不會出現在
+       ROLE_WORDS 那類清單裡，漏掉就會留下「菜鳥」（菜鳥小陳的半截）這種殘骸。 */
+    const longerWords = nameKeys.concat(ROLE_WORDS, NAME_TITLES, Array.from(FAMILY_WORDS),
+      FULL_NAMES, Object.keys(NAME_ALIASES));
+    for (const n of nameKeys) {
+      if (longerWords.some(function (m) { return m !== n && m.length > n.length && m.indexOf(n) === 0; })) cnt.delete(n);
     }
-    for (const [w, c] of nick) if (c >= looseNeed && !cnt.has(w)) cnt.set(w, c);
-  })();
+  }
+  dropHalfNames();
 
   /* 別名清理：alias 的計數已合併到 canonical，但短版本仍可能被其他規則
      （句首統計、暱稱）獨立加入 cnt。這裡刪除已經合併過的 alias 鍵，避免同一
@@ -2490,12 +2518,17 @@ const PLACE_FLAVOR = {
 };
 
 /* 在字串中找出「當主體用」的名字（跳過「父親的合夥人」這種修飾用法） */
+/* 修飾用法（「阿政家」「王宜政的住所」）不是鏡頭主體 —— 那只是地點或所有格。
+   原本只擋「的」，實測《鬼針》開場「把車停在阿政家的圍牆」會把屋主當成主體，
+   真正在畫面上動作的檳榔李反而被蓋掉。 */
+const NOT_SUBJECT_TAIL = '的家宅府';
+
 function subjectName(chunk, names) {
   let who = '', best = 0, bestAt = -1;
   for (const n of names) {
     let c = 0, at = -1;
     for (let k = chunk.indexOf(n); k >= 0; k = chunk.indexOf(n, k + 1)) {
-      if (chunk[k + n.length] === '的') continue;   /* 修飾用法不當主體 */
+      if (NOT_SUBJECT_TAIL.indexOf(chunk[k + n.length]) >= 0) continue;   /* 修飾用法不當主體 */
       c++;
       if (at < 0) at = k;
     }
@@ -2506,12 +2539,12 @@ function subjectName(chunk, names) {
   }
   return who;
 }
-
-/* 這一段最後點名的角色（給下一段的代名詞回指用） */
 function lastMentioned(chunk, names) {
   let name = '', at = -1;
   for (const n of names) {
-    const k = chunk.lastIndexOf(n);
+    let k = chunk.lastIndexOf(n);
+    /* 「他走進阿政家」的「他」不該回指屋主 → 跳過修飾用法 */
+    while (k > 0 && NOT_SUBJECT_TAIL.indexOf(chunk[k + n.length]) >= 0) k = chunk.lastIndexOf(n, k - 1);
     if (k > at) { at = k; name = n; }
   }
   return name;
@@ -3426,8 +3459,13 @@ function analyzeNovel(rawText, opt) {
 
   /* 比對用的角色名要含 role 型角色（父親／母親／探長…），否則整篇沒有一個
      「某某說道」時，逐鏡角色會全空。順序沿用 persons（真名在前、角色在後），
-     讓同一段同時出現真名與角色時，優先命中真名。 */
-  const nameRe = persons.map(p => p.name);
+     讓同一段同時出現真名與角色時，優先命中真名。
+     別名也要放進來：鏡頭文字寫的是「阿信」，角色卡卻是「吳正信」——
+     少了這一步，別名主角的鏡頭全部鎖不到臉（實測《黑騎士》的被害人全篇
+     出現 24 次，535 鏡裡只分到 1 鏡）。命中後再換回主要名稱。 */
+  const aliasKeys = Object.keys(NAME_ALIASES).filter(a => persons.some(p => p.name === NAME_ALIASES[a]));
+  const nameRe = persons.map(p => p.name).concat(aliasKeys);
+  const canon = n => NAME_ALIASES[n] || n;
   const shots = [];
   /* 場景起點留空，不猜。原本初始化成 places[0]（出現次數最高的場景），
      結果「臥室」在故事中段才出現，前面幾十個鏡頭卻全被標成臥室。
@@ -3447,13 +3485,14 @@ function analyzeNovel(rawText, opt) {
        ③ 「他／她」＝前文最近點名的角色（代名詞回指）
        都判斷不出來才留空 —— 留空是安全的，猜錯會鎖錯臉。 */
     const trait = traitSubject(chunk, nameRe);
-    const named = subjectName(chunk, nameRe);
+    const namedRaw = subjectName(chunk, nameRe);
+    const named = namedRaw ? canon(namedRaw) : '';
     const woAt = chunk.search(/(?<!其)我/);          /* 「其他」不算 */
-    const nameAt = named ? chunk.indexOf(named) : -1;
+    const nameAt = namedRaw ? chunk.indexOf(namedRaw) : -1;
     let who = '', whoFrom = '';
     /* 氣質詞直接黏在某個名字後面（「合夥人看起來忠厚老實」）＝最強證據，
        比「這一段出現最多次」更可靠，優先採用。 */
-    if (trait) { who = trait.name; whoFrom = '氣質詞'; }
+    if (trait) { who = canon(trait.name); whoFrom = '氣質詞'; }
     else if (named && (woAt < 0 || (nameAt >= 0 && nameAt <= woAt))) { who = named; whoFrom = '點名'; }
     else if (woAt >= 0 && narrator.name) { who = narrator.name; whoFrom = '我＝敘述者'; }
     else if (named) { who = named; whoFrom = '點名'; }
@@ -3467,8 +3506,10 @@ function analyzeNovel(rawText, opt) {
       const g = (genders && genders[lastName]) || (cand ? genderOf(cand) : '');
       if (!want || !g || want === g) { who = lastName; whoFrom = '代名詞'; }
     }
-    /* 更新回指對象：這一段最後點名的人 */
-    const mention = lastMentioned(chunk, nameRe);
+    /* 更新回指對象：這一段最後點名的人。
+       回指鏈刻意「只用角色卡名稱」—— 別名放進來會讓「他看到屋內的阿政」把
+       下一個「他」劫走（主體其實是動作中的那個人），寧可少猜也不要鎖錯臉。 */
+    const mention = lastMentioned(chunk, persons.map(p => p.name));
     if (mention) lastName = mention;
     const size = guessSize(chunk, isDialogue);
     const prevScene = i > 0 ? shots[shots.length - 1]._scene : '';

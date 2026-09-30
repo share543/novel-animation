@@ -653,6 +653,19 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     const dn = d.persons.map(p => p.name);
     ok(dn.indexOf('先別動') < 0, '句首副詞＋動詞短語不會被當成人名（先別動）', dn.join('／'));
     ok(dn.indexOf('鄭組長') >= 0, '同一句裡的真角色仍要抓到', dn.join('／'));
+
+    /* ⑤ 別名也要能判定鏡頭主體 —— 旁白寫的是「阿信」，角色卡叫「吳正信」。
+       少了這一步，別名主角的鏡頭全部鎖不到臉（實測《黑騎士》的被害人
+       全篇出現 24 次，535 鏡裡只分到 1 鏡）。 */
+    const e = analyzeNovel(('吳正信的住所到了。阿信走了進去。阿信拿起電話。' +
+      '阿信嘆了口氣。阿信坐了下來。').repeat(2), opt);
+    const en = e.persons.map(p => p.name);
+    ok(en.indexOf('吳正信') >= 0, '別名主角以主要名稱出現在人物表', en.join('／'));
+    ok(en.indexOf('阿信') < 0, '別名不會另立一個角色條目', en.join('／'));
+    const eh = e.shots.filter(s => s.narr.indexOf('阿信') >= 0);
+    ok(eh.length > 0, '測資要讓「阿信」出現在旁白裡（否則這條測不到東西）', eh.length);
+    ok(eh.every(s => s._who === '吳正信'), '旁白寫別名時鏡頭主體要是主要名稱（否則鎖不到臉）',
+      eh.map(s => s._who || '—').join('／'));
   })();
 
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
