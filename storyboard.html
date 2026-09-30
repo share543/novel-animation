@@ -1523,18 +1523,36 @@ const FAMILY_WORDS = new Set([
 
 /* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「林啟明探長」） */
 /* 完整名稱：先匹配長版本，避免截斷版（「菜鳥小」×22、「高老先」×8、「阿善師」×14）
-   通過檢查後，短版本永遠沒被嘗試。這些名稱在文本中直接出現，優先匹配。 */
+   通過檢查後，短版本永遠沒被嘗試。這些名稱在文本中直接出現，優先匹配。
+   ⚠️ 由 tools/lexicon/*.js 經 `node tools/merge-lex.js` 產生，不要手改。
+   只放「一般規則（名字＋動詞／名字＋職稱／句首統計）抓不到」的名字 ——
+   已抓得到的名字放進來，會被 FULL_NAMES 與其他規則各算一次，次數翻倍。 */
 const FULL_NAMES = [
+  '王宜政',
+  '王巫瑛',
+  '銀墜子小雷',
+  '警員小張',
   '菜鳥小陳',
   '高老先生',
-  '阿善師進福',
+  '阿善師進福'
 ];
 /* 別名映射：文本中對同一人物的不同稱呼，合併到主要名稱。
-   「老鄭」是鄭組長的另一個稱呼（出現 5 次）。 */
+   ⚠️ 由 tools/lexicon/*.js 經 `node tools/merge-lex.js` 產生，不要手改。
+   合併的兩個防護（主要名稱須出現於文本、子字串不重複計數）見 extractPersons。 */
 const NAME_ALIASES = {
   '老鄭': '鄭組長',
   '小陳': '菜鳥小陳',
   '高老頭': '高老先生',
+  '老馬': '馬組長',
+  '老秦': '秦組長',
+  '阿政': '王宜政',
+  '王先生': '王宜政',
+  '王太太': '王巫瑛',
+  '小雷': '銀墜子小雷',
+  '小張': '警員小張',
+  '阿善師': '阿善師進福',
+  '進福': '阿善師進福',
+  '鄭探長': '鄭組長'
 };
 const NAME_TITLES = [
   '所長',
@@ -1788,10 +1806,25 @@ function extractPersons(text, limit) {
     }
   }
   /* 別名匹配：文本中對同一人物的不同稱呼，合併到主要名稱。
-     「老鄭」是鄭組長的另一個稱呼（出現 5 次）。 */
+     「老鄭」是鄭組長的另一個稱呼（出現 5 次）。
+     兩個防護：
+     ① 主要名稱必須真的在文本中出現，才做合併 —— 否則別的篇只要出現
+        「小陳」，就會憑空冒出一個「菜鳥小陳」（全域別名表的副作用）。
+     ② alias 若是 canonical 的子字串（「小陳」之於「菜鳥小陳」、
+        「阿善師」之於「阿善師進福」），落在 canonical 內的那些已經
+        被 FULL_NAMES 算過了，要扣掉，否則同一句話會算兩次
+        （實測「小陳」50 次裡有 38 次其實是「菜鳥小陳」的一部分）。 */
+  const appliedAliases = new Set();   /* 真的做過合併的別名，才可以在最後刪掉 */
   for (const [alias, canonical] of Object.entries(NAME_ALIASES)) {
+    const spans = [];
+    let ci = -1;
+    while ((ci = text.indexOf(canonical, ci + 1)) >= 0) spans.push([ci, ci + canonical.length]);
+    if (!spans.length) continue;
+    appliedAliases.add(alias);
     let idx = -1;
     while ((idx = text.indexOf(alias, idx + 1)) >= 0) {
+      const a0 = idx, a1 = idx + alias.length;
+      if (spans.some(function (r) { return a0 < r[1] && a1 > r[0]; })) continue;
       bump(canonical);
     }
   }
@@ -1942,10 +1975,12 @@ function extractPersons(text, limit) {
   })();
 
   /* 別名清理：alias 的計數已合併到 canonical，但短版本仍可能被其他規則
-     （句首統計、暱稱）獨立加入 cnt。這裡刪除 alias 鍵，避免同一人物
-     出現兩個條目（實測「小陳」×9 與「菜鳥小陳」×88 並存）。
-     必須放在所有規則之後，否則 nickname 規則又會把它加回來。 */
-  for (const alias of Object.keys(NAME_ALIASES)) cnt.delete(alias);
+     （句首統計、暱稱）獨立加入 cnt。這裡刪除已經合併過的 alias 鍵，避免同一
+     人物出現兩個條目（實測「小陳」×9 與「菜鳥小陳」×88 並存）。
+     必須放在所有規則之後，否則 nickname 規則又會把它加回來。
+     只刪「真的合併過」的 —— 主要名稱不在文本裡時（別的篇的「王太太」），
+     那個 alias 是它自己的角色，不能刪。 */
+  for (const alias of appliedAliases) cnt.delete(alias);
 
   const names = [...cnt.entries()]
     .filter(([name, count]) => !loose.has(name) || count >= looseNeed)
@@ -1953,6 +1988,12 @@ function extractPersons(text, limit) {
     .sort((a, b) => b.count - a.count);
   /* 職稱：出現 ≥3 次且沒被當成名字抓過，就當一個角色（偵探小說常寫「偵探說」）。 */
   const roles = [];
+  /* 「已知的人名」＝ cnt 的鍵 ＋ 別名鍵 ＋ FULL_NAMES。
+     別名鍵已經被上面的清理從 cnt 刪掉了，但它們確實是名字的一部分
+     （「王太太」的「太太」不該自己變成一個角色）。 */
+  const known = new Set(cnt.keys());
+  Object.keys(NAME_ALIASES).forEach(function (n) { known.add(n); });
+  FULL_NAMES.forEach(function (n) { known.add(n); });
   /* 短篇的門檻要低一點：1,000 字的故事裡「合夥人」出現 2 次就是主要角色，
      用長篇的門檻（3 次）會整個漏掉。長篇維持 3 次避免雜訊。 */
   const need = text.length < 3000 ? 2 : 3;
@@ -1962,7 +2003,15 @@ function extractPersons(text, limit) {
     for (let i = text.indexOf(w); i >= 0; i = text.indexOf(w, i + 1)) {
       c++;
       /* 「林刑警」裡的「刑警」：前面接姓氏且姓＋職業已是抓到的名字 → 算被包住 */
-      if (i > 0 && SURNAMES.has(text[i - 1]) && cnt.has(text[i - 1] + w)) embedded++;
+      if (i > 0 && SURNAMES.has(text[i - 1]) && known.has(text[i - 1] + w)) { embedded++; continue; }
+      /* 「高老先生」「王宜政先生」這種「名字（≥2 字）＋職稱」：只看前一個字
+         是不是姓會漏判（前面是「老」不是姓），於是「先生」自己變成一個角色
+         （實測 ×15，全是「高老先生」「王先生」貢獻的）。 */
+      for (let l = 2; l <= 3; l++) {
+        const s = i - l;
+        if (s < 0) break;
+        if (known.has(text.slice(s, i) + w)) { embedded++; break; }
+      }
     }
     /* 獨立出現的次數要夠，才算一個角色；全被姓名包住就不要另立角色
        （實測：「刑警」搶走「林刑警」的鏡頭，林刑警反而 0 鏡） */

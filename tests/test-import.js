@@ -620,6 +620,34 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     ok(new Set(used).size === used.length, '同篇角色不會穿到一模一樣的衣服', used.join(' / '));
   })();
 
+  /* 別名合併的三個坑（實測《鬼針》踩到）：
+     ① 別名不能憑空生出角色 —— 全域別名表裡有「小陳→菜鳥小陳」，
+        別的篇出現「小陳」不該冒出一個「菜鳥小陳」。
+     ② 別名若是主要名稱的子字串（「小陳」之於「菜鳥小陳」），落在主要
+        名稱內的那些不能重複計算（8 句各 1 次＝16，不是 8＋16＝24）。
+     ③ 職稱被包在名字裡時（「高老先生」的「先生」）不能自己變成角色。 */
+  (() => {
+    const opt = { secPerShot: 4, maxChars: 24, maxScenes: 4, wpm: 260 };
+
+    /* ① 主要名稱不在文本中 → 別名要留著當自己的角色，且不得生出主要名稱 */
+    const a = analyzeNovel(('王太太在廚房洗衣，王太太抬起頭來。' +
+      '鄭組長說道：「先別動。」').repeat(8), opt);
+    const an = a.persons.map(p => p.name);
+    ok(an.indexOf('王巫瑛') < 0, '主要名稱不在文本中時，不會憑空生出該角色', an.join('／'));
+    ok(an.indexOf('王太太') >= 0, '主要名稱不在文本中時，別名自己算一個角色', an.join('／'));
+
+    /* ② 子字串別名不重複計算 */
+    const b = analyzeNovel('菜鳥小陳走了進來。小陳拿起電話。'.repeat(8), opt);
+    const bc = (b.persons.filter(p => p.name === '菜鳥小陳')[0] || {}).count;
+    ok(bc === 16, '子字串別名不會重複計算（菜鳥小陳／小陳各 8 次＝16）', bc);
+
+    /* ③ 被名字包住的職稱不另立角色 */
+    const c = analyzeNovel('高老先生坐在走廊。'.repeat(6) + '鄭組長拿起話筒。'.repeat(6), opt);
+    const cn = c.persons.map(p => p.name);
+    ok(cn.indexOf('先生') < 0, '被名字包住的職稱不會自己變成角色（高老先生的「先生」）', cn.join('／'));
+    ok(cn.indexOf('高老先生') >= 0, '該角色本身仍要保留', cn.join('／'));
+  })();
+
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
   process.exit(fail ? 1 : 0);
 })();

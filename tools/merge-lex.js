@@ -22,7 +22,7 @@ const SKIP = new Set(['cues.js']);
 const FILES = fs.readdirSync(DIR).filter(function (f) {
   return /\.js$/.test(f) && !SKIP.has(f);
 }).sort();
-const KEYS = ['ROLE_WORDS','FAMILY_WORDS','NAME_TITLES','ROLE_OUTFIT_HINTS','HAIR','FACE_SHAPES','EYES',
+const KEYS = ['ROLE_WORDS','FAMILY_WORDS','NAME_TITLES','FULL_NAMES','NAME_ALIASES','ROLE_OUTFIT_HINTS','HAIR','FACE_SHAPES','EYES',
   'MARK_POOL','OUTFITS','PLACE_TEX_BY_NAME','SCENE_TEXTURE','SCENE_LIGHT','SCENE_SEASON',
   'ACTION_PHRASES','FACE_PHRASES','TRAIT_PHRASES','LIGHT_PHRASES','OBJ_CLOSEUP','NOUN_VISUALS','TIME_JUMP'];
 
@@ -57,6 +57,9 @@ function js(v) {
 
 let src = fs.readFileSync(CORE, 'utf8');
 const report = [];
+/* 沒有新條目就不要改寫 —— 改寫會把人工排版的註解與換行洗掉，讓每次合併
+   都產生一大坨無關 diff（實測「現場」場景的說明註解就是這樣被吃掉的）。 */
+function skip(name) { report.push('  ' + name.padEnd(20) + '無新增，略過（保留原格式）'); }
 
 function bounds(name, kind) {
   const needle = kind === 'set' ? 'const ' + name + ' = new Set(['
@@ -95,6 +98,7 @@ function push(name, list, kind) {
       inBatch.add(k);
       return true;
     });
+    if (!fresh.length) { skip(name); return; }
     merged = fresh.concat(oldList);
     /* 結果整體去重（新條目優先保留）—— 舊陣列自己可能有重複，
        只比對「新 vs 舊」會把舊的重複原封不動留下來 */
@@ -110,6 +114,7 @@ function push(name, list, kind) {
   } else {
     const seen = new Set(oldList);
     fresh = list.filter(function (x) { return !seen.has(x); });
+    if (!fresh.length) { skip(name); return; }
     merged = fresh.concat(oldList);
     body = merged.map(function (x) { return '  ' + js(x); }).join(',\n');
     decl = kind === 'set' ? 'const ' + name + ' = new Set([\n' + body + '\n]);'
@@ -137,13 +142,18 @@ function mergePool(name, add) {
     return o !== undefined ? o : n;
   }
   const merged = mix(old, add);
-  const cnt = function (d) { let c = 0; for (const k in d) c += (d[k] && typeof d[k] === 'object' && !Array.isArray(d[k])) ? cnt(d[k]) : d[k].length; return c; };
+  if (JSON.stringify(merged) === JSON.stringify(old)) { skip(name); return; }
+  /* 葉節點可能是陣列（造型池）也可能是字串（別名表）—— 一律算 1 條，
+     否則字串會拿 .length 去加，報告會變成「幾個字」而不是「幾條」。 */
+  const cnt = function (d) { let c = 0; for (const k in d) c += (d[k] && typeof d[k] === 'object') ? cnt(d[k]) : 1; return c; };
   src = src.slice(0, r[0]) + 'const ' + name + ' = ' + js(merged) + ';' + src.slice(r[1]);
   report.push('  ' + name.padEnd(20) + cnt(old) + ' → ' + cnt(merged) + ' 項');
 }
 
 push('ROLE_WORDS', NEW.ROLE_WORDS || [], 'plain');   /* 核心裡是陣列不是 Set */
 push('NAME_TITLES', NEW.NAME_TITLES || [], 'plain');
+push('FULL_NAMES', NEW.FULL_NAMES || [], 'plain');   /* 文本中直接出現、但位置規則拿不到的完整人名 */
+mergePool('NAME_ALIASES', NEW.NAME_ALIASES || {});    /* 別名 → 主要名稱 */
 push('FAMILY_WORDS', Array.from(NEW.FAMILY_WORDS || []), 'set');
 mergePool('HAIR', NEW.HAIR || {});
 mergePool('OUTFITS', NEW.OUTFITS || {});
