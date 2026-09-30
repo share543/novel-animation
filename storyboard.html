@@ -1710,9 +1710,12 @@ const NAME_BOUND = new Set(('，。！？：；、,.!?:;」』】）)…—「�
 function boundaryOK(prev) { return prev === '' || NAME_BOUND.has(prev) || '著了完過起'.indexOf(prev) >= 0; }
 
 /* 這些字可以是「名字前面」的字，但不能是名字的開頭 ——
-   否則「向狄公道」會被抓成「向狄公」（介詞被吞進名字）。 */
+   否則「向狄公道」會被抓成「向狄公」（介詞被吞進名字）。
+   句首副詞／否定詞也算在內：實測「先別動」在對白裡反覆出現 8 次，
+   就被句首統計當成一個人名（「先」不是姓也不是名字開頭的字）。 */
 const NOT_NAME_START = new Set(('向對跟和與從把被讓給替為同朝將並而則但卻就也都很更最又再還只才便是在有' +
-  '的說道問答喊叫看聽想見知要能可是的了').split(''));
+  '的說道問答喊叫看聽想見知要能可是的了' +
+  '先別沒未勿不').split(''));
 
 function looksLikeName(s) {
   if (!/^[\u4e00-\u9fff]{2,4}$/.test(s)) return false;
@@ -1764,8 +1767,9 @@ const NAME_BAD_CHAR = new Set(('他她它我你您其們誰何什怎幾兩三四
 const NAME_BAD_TAIL = new Set(('的了著是在有和與也都就便又很太更最把將被給對向跟同從而且則但卻嗎呢吧啊哦喔呀嘛個之於為以並'.split('')));
 /* 實物結尾的字：「小飛機」「老照片」這種會被「小／老／阿」前綴誤收成人名。 */
 const THING_TAIL = new Set(('機車船房門窗槍刀劍衣鞋帽紙筆錢藥杯碗袋箱盤桌椅床燈鏡錶'.split('')));
-/* 動詞／方位結尾：「狄公道」「狄公聽」「且看下」都是「名字＋動詞」被整串抓走。 */
-const VERB_TAIL = new Set(('道說問答看聽見想走去來拿放坐站轉低抬笑哭喊叫罵喝望瞪搖點打抓推拉開關停起落升降下上中內外前後間過完了著'.split('')));
+/* 動詞／方位結尾：「狄公道」「狄公聽」「且看下」都是「名字＋動詞」被整串抓走。
+   「動」也算動詞（「不許動」「別動」），少了它「先別動」這種對白會過關。 */
+const VERB_TAIL = new Set(('道說問答看聽見想走去來拿放坐站轉低抬笑哭喊叫罵喝望瞪搖點打抓推拉開關停起落升降下上中內外前後間過完了著動'.split('')));
 function canBeBareName(s) {
   if (s.length < 2 || s.length > 3) return false;
   if (NOT_NAME.has(s) || ADV_ISH.has(s)) return false;
@@ -2007,11 +2011,20 @@ function extractPersons(text, limit) {
       /* 「高老先生」「王宜政先生」這種「名字（≥2 字）＋職稱」：只看前一個字
          是不是姓會漏判（前面是「老」不是姓），於是「先生」自己變成一個角色
          （實測 ×15，全是「高老先生」「王先生」貢獻的）。 */
+      let wrapped = false;
       for (let l = 2; l <= 3; l++) {
         const s = i - l;
         if (s < 0) break;
-        if (known.has(text.slice(s, i) + w)) { embedded++; break; }
+        if (known.has(text.slice(s, i) + w)) { wrapped = true; break; }
       }
+      /* 反向也要算：「警員小張」這種「職稱＋名字」，職稱在前面同樣是被包住的。
+         只往前看會漏掉，「警員」於是多算成獨立角色（實測 12 → 10）。 */
+      if (!wrapped) {
+        for (let l = 2; l <= 3; l++) {
+          if (known.has(text.substr(i + w.length, l))) { wrapped = true; break; }
+        }
+      }
+      if (wrapped) embedded++;
     }
     /* 獨立出現的次數要夠，才算一個角色；全被姓名包住就不要另立角色
        （實測：「刑警」搶走「林刑警」的鏡頭，林刑警反而 0 鏡） */

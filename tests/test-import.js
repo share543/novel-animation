@@ -646,6 +646,13 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     const cn = c.persons.map(p => p.name);
     ok(cn.indexOf('先生') < 0, '被名字包住的職稱不會自己變成角色（高老先生的「先生」）', cn.join('／'));
     ok(cn.indexOf('高老先生') >= 0, '該角色本身仍要保留', cn.join('／'));
+
+    /* ④ 句首副詞／否定詞開頭的不是人名 —— 對白「先別動。」反覆出現就會被
+       句首統計收成人名（「先」既不是姓也不是名字開頭的字）。 */
+    const d = analyzeNovel('鄭組長說道：「先別動。」'.repeat(10), opt);
+    const dn = d.persons.map(p => p.name);
+    ok(dn.indexOf('先別動') < 0, '句首副詞＋動詞短語不會被當成人名（先別動）', dn.join('／'));
+    ok(dn.indexOf('鄭組長') >= 0, '同一句裡的真角色仍要抓到', dn.join('／'));
   })();
 
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
