@@ -746,6 +746,20 @@ const FAMILY_WORDS = new Set([
 ]);
 
 /* 「名字＋職稱」的職稱詞（偵探小說最常這樣指涉角色：「林啟明探長」） */
+/* 完整名稱：先匹配長版本，避免截斷版（「菜鳥小」×22、「高老先」×8、「阿善師」×14）
+   通過檢查後，短版本永遠沒被嘗試。這些名稱在文本中直接出現，優先匹配。 */
+const FULL_NAMES = [
+  '菜鳥小陳',
+  '高老先生',
+  '阿善師進福',
+];
+/* 別名映射：文本中對同一人物的不同稱呼，合併到主要名稱。
+   「老鄭」是鄭組長的另一個稱呼（出現 5 次）。 */
+const NAME_ALIASES = {
+  '老鄭': '鄭組長',
+  '小陳': '菜鳥小陳',
+  '高老頭': '高老先生',
+};
 const NAME_TITLES = [
   '所長',
   '局長',
@@ -989,6 +1003,22 @@ function extractPersons(text, limit) {
   const intro = new Set();          /* 「我叫X」句型抓到的名字＝敘述者候選 */
   const loose = new Set();          /* 靠放寬規則進來的名字，最後要用出現次數過濾 */
   const bump = n => cnt.set(n, (cnt.get(n) || 0) + 1);
+  /* 完整名稱優先匹配：避免截斷版（「菜鳥小」×22、「高老先」×8、「阿善師」×14）
+     通過檢查後，短版本永遠沒被嘗試。這些名稱在文本中直接出現，優先匹配。 */
+  for (const fn of FULL_NAMES) {
+    let idx = -1;
+    while ((idx = text.indexOf(fn, idx + 1)) >= 0) {
+      bump(fn);
+    }
+  }
+  /* 別名匹配：文本中對同一人物的不同稱呼，合併到主要名稱。
+     「老鄭」是鄭組長的另一個稱呼（出現 5 次）。 */
+  for (const [alias, canonical] of Object.entries(NAME_ALIASES)) {
+    let idx = -1;
+    while ((idx = text.indexOf(alias, idx + 1)) >= 0) {
+      bump(canonical);
+    }
+  }
   for (const v of SPEAK_VERBS.concat(MOVE_VERBS)) {
     let idx = -1;
     while ((idx = text.indexOf(v, idx + 1)) >= 0) {
@@ -1106,7 +1136,6 @@ function extractPersons(text, limit) {
   for (const n of nameKeys) {
     if (longerWords.some(function (m) { return m !== n && m.length > n.length && m.indexOf(n) === 0; })) cnt.delete(n);
   }
-
   /* 放寬規則進來的名字要用次數把關：只出現一兩次的多半是誤判。
      門檻跟職稱一致（短篇低、長篇高）。 */
   const looseNeed = text.length < 3000 ? 2 : 3;
@@ -1135,6 +1164,12 @@ function extractPersons(text, limit) {
     }
     for (const [w, c] of nick) if (c >= looseNeed && !cnt.has(w)) cnt.set(w, c);
   })();
+
+  /* 別名清理：alias 的計數已合併到 canonical，但短版本仍可能被其他規則
+     （句首統計、暱稱）獨立加入 cnt。這裡刪除 alias 鍵，避免同一人物
+     出現兩個條目（實測「小陳」×9 與「菜鳥小陳」×88 並存）。
+     必須放在所有規則之後，否則 nickname 規則又會把它加回來。 */
+  for (const alias of Object.keys(NAME_ALIASES)) cnt.delete(alias);
 
   const names = [...cnt.entries()]
     .filter(([name, count]) => !loose.has(name) || count >= looseNeed)
