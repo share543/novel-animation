@@ -169,11 +169,31 @@ push('SCENE_SEASON', NEW.SCENE_SEASON || [], 'plain');
 });
 push('OBJ_CLOSEUP', NEW.OBJ_CLOSEUP || [], 'pairs');   /* 已是配對陣列（純字串會被自動補成配對） */
 
-if (NEW.ROLE_OUTFIT_HINTS && src.indexOf('const ROLE_OUTFIT_HINTS') < 0) {   /* 幂等：已經有就不要重插 */
-  src = src.replace('/* ── 造型建議（髮型／臉型／服裝／辨識記憶點）──',
-    '/* 身份 -> 固定服裝（資料驅動，比寫死的 regex 好維護） */\nconst ROLE_OUTFIT_HINTS = ' +
-    js(NEW.ROLE_OUTFIT_HINTS) + ';\n\n/* ── 造型建議（髮型／臉型／服裝／辨識記憶點）──', 1);
-  report.push('  ' + 'ROLE_OUTFIT_HINTS'.padEnd(20) + ' +' + NEW.ROLE_OUTFIT_HINTS.length + ' 條（新功能）');
+/* ROLE_OUTFIT_HINTS：核心本來就有一份寫死的表，所以多數情況是「併入」不是「新插」。
+   舊版只在核心沒有這份表時才寫入 —— 詞庫檔寫了會被**靜默丟掉**（連報告行都沒有，
+   實測加了黑衣騎士的服裝卻在核心找不到）。併入時只在陣列尾端追加，不重排既有
+   條目，避免把人工排版的那一大行整份洗掉。
+   順序有意義（先命中先贏），所以新條目排在最後＝不會搶走既有身份的服裝。 */
+if (NEW.ROLE_OUTFIT_HINTS && NEW.ROLE_OUTFIT_HINTS.length) {
+  const r = bounds('ROLE_OUTFIT_HINTS', 'plain');
+  if (!r) {
+    src = src.replace('/* ── 造型建議（髮型／臉型／服裝／辨識記憶點）──',
+      '/* 身份 -> 固定服裝（資料驅動，比寫死的 regex 好維護） */\nconst ROLE_OUTFIT_HINTS = ' +
+      js(NEW.ROLE_OUTFIT_HINTS) + ';\n\n/* ── 造型建議（髮型／臉型／服裝／辨識記憶點）──', 1);
+    report.push('  ' + 'ROLE_OUTFIT_HINTS'.padEnd(20) + ' +' + NEW.ROLE_OUTFIT_HINTS.length + ' 條（新插）');
+  } else {
+    const oldTxt = src.slice(r[0], r[1]).replace(/^const \w+ = /, '').replace(/;$/, '');
+    const old = vm.runInNewContext('(' + oldTxt + ')');
+    const seen = new Set(old.map(function (e) { return String(e[0]); }));
+    const fresh = NEW.ROLE_OUTFIT_HINTS.filter(function (e) { return !seen.has(String(e[0])); });
+    if (!fresh.length) { skip('ROLE_OUTFIT_HINTS'); }
+    else {
+      const e = r[1] - 2;   /* 指向收尾的 ']' */
+      src = src.slice(0, e) + ', ' + fresh.map(js).join(', ') + src.slice(e);
+      report.push('  ' + 'ROLE_OUTFIT_HINTS'.padEnd(20) + ' +' + fresh.length +
+        ' 新身份 → 共 ' + (old.length + fresh.length) + ' 條');
+    }
+  }
 }
 
 console.log(report.join('\n'));

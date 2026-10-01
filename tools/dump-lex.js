@@ -2,8 +2,15 @@
 /* 把出貨詞庫匯出成 JSON，供 Python 採礦器比對「哪些詞還沒收」。
    注意：核心整份載入會在啟動段炸掉（缺 DEF_STYLE 等 DOM 全域），
    const 也就拿不到 —— 所以改成「抽出宣告、單獨 eval」，並對空清單大聲報錯。 */
-const fs = require('fs'), vm = require('vm');
-const CORE = '/home/arthur/.hermes/cache/scratch/novel-import-core.js';
+const fs = require('fs'), vm = require('vm'), path = require('path');
+/* 後援：開發時的 scratch 工作檔常常已被清掉，那就用 repo 的正本 src/。
+   找不到要大聲講，不要靜默拿空資料去比對「哪些詞還沒收」。 */
+const CANDIDATES = [
+  '/home/arthur/.hermes/cache/scratch/novel-import-core.js',
+  path.join(__dirname, '..', 'src', 'novel-import-core.js')
+];
+const CORE = CANDIDATES.filter(function (p) { return fs.existsSync(p); })[0];
+if (!CORE) { console.error('找不到 novel-import-core.js，試過：' + CANDIDATES.join('、')); process.exit(2); }
 const src = fs.readFileSync(CORE, 'utf8');
 
 function grab(name, kind) {

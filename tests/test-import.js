@@ -666,6 +666,17 @@ const CONTENT = 'BT /F1 12 Tf 1 0 0 1 20 100 Tm <004100420043> Tj ET\n' +
     ok(eh.length > 0, '測資要讓「阿信」出現在旁白裡（否則這條測不到東西）', eh.length);
     ok(eh.every(s => s._who === '吳正信'), '旁白寫別名時鏡頭主體要是主要名稱（否則鎖不到臉）',
       eh.map(s => s._who || '—').join('／'));
+
+    /* ⑥ 季節：文中明寫「中秋」「秋老虎」就要認出來。文裡沒線索時整篇挑一個
+       固定值是刻意的（避免每場換季），但「有線索卻認不出來」會把秋天挑成別的
+       季節 —— 實測《黃色光下的黑騎士》開頭「時近中秋」判成「夏天，空氣悶熱」。
+       直接驗 detectSeason（而不是驗整篇 JSON）—— 短測資常常生不出場景，
+       驗整篇會變成「什麼都沒有所以通過」的空測。 */
+    const seasonTxt = ('時近中秋，白晝漸短。秋老虎肆虐，整條街悶得發燙。' +
+      '他們約在土地公廟前碰面，廟埕上擺著石桌椅。入秋後早晚偏涼，中午仍舊炎熱。').repeat(3);
+    ok(typeof detectSeason === 'function', 'detectSeason 要被測到（否則這條是空測）', typeof detectSeason);
+    ok(detectSeason(seasonTxt) === '秋天，落葉堆在角落',
+      '明寫中秋／秋老虎要判成秋天', String(detectSeason(seasonTxt)));
   })();
 
   console.log(`\n${'='.repeat(56)}\n通過 ${pass} 項，失敗 ${fail} 項`);
